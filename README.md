@@ -582,3 +582,7 @@ PATH before running `make install`.
 Some tests need real substrate and skip without it - a docker daemon for the
 provider tests, `TESTEASE_TEST_WINDOWS_CONTEXT` for the Windows probe. Skipping
 is reported, never silent.
+
+## License
+
+MIT. See `LICENSE`.

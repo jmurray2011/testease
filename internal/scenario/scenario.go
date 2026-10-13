@@ -426,6 +426,9 @@ func mergeHostTemplate(base, override Host) Host {
 	}
 	if override.Env != nil {
 		merged.Env = maps.Clone(merged.Env)
+		if merged.Env == nil {
+			merged.Env = make(map[string]string, len(override.Env))
+		}
 		for key, value := range override.Env {
 			merged.Env[key] = value
 		}
@@ -491,6 +494,9 @@ func mergeStepTemplate(base, override Step) Step {
 	}
 	if override.Env != nil {
 		merged.Env = maps.Clone(merged.Env)
+		if merged.Env == nil {
+			merged.Env = make(map[string]string, len(override.Env))
+		}
 		for key, value := range override.Env {
 			merged.Env[key] = value
 		}

@@ -150,6 +150,53 @@ steps:
 	}
 }
 
+func TestStepEnvOverTemplateWithoutEnv(t *testing.T) {
+	t.Parallel()
+
+	manifest := `
+schema: 1
+name: step-env-over-plain-template
+hosts:
+  box: {provider: docker, image: neutral-base:1}
+step_templates:
+  check:
+    host: box
+    timeout: 300s
+steps:
+  - use: check
+    label: install
+    probe: probes/install.sh
+    env: {MODE: test}
+`
+	m := loadOK(t, manifest)
+	if m.Steps[0].Env["MODE"] != "test" {
+		t.Fatalf("step env = %#v", m.Steps[0].Env)
+	}
+}
+
+func TestHostEnvOverTemplateWithoutEnv(t *testing.T) {
+	t.Parallel()
+
+	manifest := `
+schema: 1
+name: host-env-over-plain-template
+host_templates:
+  linux:
+    provider: docker
+    image: neutral-base:1
+hosts:
+  box: {use: linux, env: {MODE: test}}
+steps:
+  - label: check
+    host: box
+    probe: probes/install.sh
+`
+	m := loadOK(t, manifest)
+	if m.Hosts["box"].Env["MODE"] != "test" {
+		t.Fatalf("host env = %#v", m.Hosts["box"].Env)
+	}
+}
+
 func TestHostTemplateMustExist(t *testing.T) {
 	t.Parallel()
 	loadErr(t, `

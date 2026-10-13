@@ -1,0 +1,372 @@
+{{define "rows"}}{{range $n, $r := .}}
+<tr data-varies="{{if $r.Varies}}yes{{else}}no{{end}}"{{if odd $n}} class="odd"{{end}}>
+  <th class="label" scope="row">{{$r.Label}}</th>
+  {{if $r.Span}}<td class="shared" colspan="{{$r.Span}}"><span class="count">all {{$r.Span}}</span>{{$r.Shared}}</td>
+  {{else}}{{range $r.Values}}<td{{if .Absent}} class="absent"{{else if .Numeric}} class="num"{{end}}>{{.Text}}</td>{{end}}{{end}}
+</tr>
+{{end}}{{end}}
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}}</title>
+<style>
+/* The full palette is defined here, on bare :root, so no colour exists only
+   inside a media query and a page rendered without one is still complete. */
+:root {
+  --bg:        #fbfbfa;
+  --surface:   #ffffff;
+  --stripe:    #f6f6f4;
+  --text:      #1a1a19;
+  --muted:     #74746e;
+  --faint:     #a4a49c;
+  --border:    #e5e5e0;
+  --rule:      #d2d2cb;
+  --notice-bg: #fdf6e3;
+  --notice-fg: #6b5410;
+  --notice-br: #e8d9a8;
+  --shadow:    rgba(20, 20, 18, .07);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg:        #16171a;
+    --surface:   #1c1d21;
+    --stripe:    #202126;
+    --text:      #e9e9e6;
+    --muted:     #9a9a93;
+    --faint:     #6a6a63;
+    --border:    #2c2d33;
+    --rule:      #3a3b42;
+    --notice-bg: #2a2418;
+    --notice-fg: #e0c98a;
+    --notice-br: #4a3f24;
+    --shadow:    rgba(0, 0, 0, .35);
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 2.5rem 1.5rem 4rem;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  -webkit-text-size-adjust: 100%;
+}
+
+.wrap { max-width: 100%; margin: 0 auto; }
+
+header { margin-bottom: 1.75rem; }
+
+h1 {
+  margin: 0 0 .35rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: .01em;
+}
+
+.sub {
+  margin: 0;
+  color: var(--muted);
+  font-size: .82rem;
+}
+
+.sub code {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: .95em;
+}
+
+/* Notices are the warning channel. In the text views they are a separate
+   stream so a warning cannot be parsed as a row; a page is one stream, so the
+   separation has to be something a reader cannot mistake. */
+.notices {
+  margin: 0 0 1.5rem;
+  padding: .75rem 1rem;
+  border: 1px solid var(--notice-br);
+  border-left-width: 3px;
+  border-radius: 6px;
+  background: var(--notice-bg);
+  color: var(--notice-fg);
+  font-size: .85rem;
+}
+.notices p { margin: 0; }
+.notices p + p { margin-top: .4rem; }
+.notices .label {
+  display: block;
+  margin-bottom: .5rem;
+  font-size: .72rem;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  opacity: .8;
+}
+
+/* The table scrolls inside its own box. The page never scrolls sideways, which
+   is the whole reason this view exists: a handful of columns of hashes and
+   paths is unreadable in a terminal. */
+.scroll {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 1px 2px var(--shadow);
+}
+
+/* WIDTH COMES FROM THE CONTENT, not from the window. Stretched to 100% a
+   five-column table gave `yes` a 450px cell and pushed a right-set number a
+   hand's width from its own label, which is worse than the terminal it was
+   meant to improve on. */
+table {
+  border-collapse: separate;
+  border-spacing: 0;
+  width: auto;
+  min-width: 100%;
+  font-size: .82rem;
+}
+
+th, td {
+  padding: .5rem .8rem;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--border);
+}
+
+tbody tr:last-child th,
+tbody tr:last-child td { border-bottom: 0; }
+
+/* Striping is set per row rather than per tbody: grouping puts each group in
+   its own tbody, and nth-child would restart the pattern at every heading. */
+tr.odd th, tr.odd td { background: var(--stripe); }
+
+/* The header row and the label column both stick, so a value never loses the
+   name of its row or its column however far the table is scrolled. */
+thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--surface);
+  border-bottom: 1px solid var(--rule);
+  font-weight: 600;
+  font-size: .74rem;
+  /* No uppercasing: a column name here is a run id, and an identifier read in
+     capitals it was not written in is harder to read and easy to mistype. */
+  color: var(--muted);
+  /* Names wrap rather than shorten. A column here is a run id, and a run id is
+     a citation - a reader copies what they see, so an elided one is a defect
+     rather than a saving. The shared part costs height, not width. */
+  white-space: normal;
+  overflow-wrap: anywhere;
+  min-width: 5rem;
+  max-width: 14rem;
+  vertical-align: bottom;
+}
+
+thead th:first-child { z-index: 3; }
+
+th.label {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--surface);
+  border-right: 1px solid var(--rule);
+  font-weight: 500;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  white-space: nowrap;
+}
+
+tr.odd th.label { background: var(--stripe); }
+
+/* Values are readings, so they are set in the same face a record is read in.
+   Long ones wrap rather than widening the table; the text is untouched, so a
+   selected value still copies as one string. */
+td {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+  max-width: 30rem;
+  white-space: pre-wrap;
+}
+
+/* Digits line up or they cannot be compared, which is the job of a row read
+   across several records. Typography only: no number is treated as meaning
+   anything by being one. */
+td.num { text-align: right; font-variant-numeric: tabular-nums lining-nums; }
+
+/* A column this record never mentioned. The dash is real text rather than
+   generated content, because this table exists to be copied out of.
+   NOTHING ELSE IS STYLED BY VALUE: a cell is dimmed only when the record has
+   no entry for it, which the document says structurally. Reading a value's
+   meaning out of its text would make the page an opinion about the record. */
+td.absent { color: var(--faint); }
+
+/* A group is a run of rows whose labels share the part before the first dot.
+   Collapsing hides rows by what they are CALLED. Nothing here decides anything
+   from a reading. */
+tbody.group-head th {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--stripe);
+  border-top: 1px solid var(--rule);
+  border-bottom: 1px solid var(--border);
+  padding: 0;
+}
+.grouphead {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  width: 100%;
+  padding: .45rem .8rem;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: .78rem;
+  font-weight: 600;
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  text-align: left;
+  cursor: pointer;
+}
+.grouphead:hover { color: var(--text); }
+.grouphead .caret {
+  display: inline-block;
+  width: .55rem;
+  transition: transform .12s ease;
+  font-size: .7rem;
+}
+tbody.shut + tbody .caret,
+.grouphead[aria-expanded="false"] .caret { transform: rotate(-90deg); }
+.grouphead .count { font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--faint); }
+
+tbody.shut tr { display: none; }
+
+/* The reader's controls. Nothing they do is applied before they ask. */
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+  margin: 0 0 .8rem;
+  font-size: .78rem;
+  color: var(--muted);
+}
+.controls button {
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: .25rem .6rem;
+  background: var(--surface);
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+.controls button:hover { color: var(--text); border-color: var(--rule); }
+.controls label { display: inline-flex; align-items: center; gap: .4rem; cursor: pointer; }
+tbody.filtered tr[data-varies="no"] { display: none; }
+
+/* One reading, said once, across the columns that all carry it. It is not
+   dimmed and it is not hidden - the count says how many columns agreed, and the
+   value is right there to read and to copy. */
+td.shared { color: var(--text); }
+td.shared .count {
+  margin-right: .6rem;
+  padding: .05rem .35rem;
+  border-radius: 3px;
+  background: var(--stripe);
+  color: var(--muted);
+  font-size: .9em;
+}
+
+.empty {
+  padding: 1.25rem;
+  color: var(--muted);
+  font-size: .85rem;
+}
+
+footer {
+  margin-top: 1.25rem;
+  color: var(--faint);
+  font-size: .72rem;
+}
+</style>
+<div class="wrap">
+  <header>
+    <h1>{{.Title}}</h1>
+    <p class="sub">{{.View}} &middot; {{.RowCount}} row{{if ne .RowCount 1}}s{{end}} &middot; {{.ColumnCount}} column{{if ne .ColumnCount 1}}s{{end}}{{if .Footer}} &middot; {{.Footer}}{{end}}</p>
+  </header>
+
+  {{if .Notices}}
+  <div class="notices">
+    <span class="label">warnings about these records</span>
+    {{range .Notices}}<p>{{.}}</p>{{end}}
+  </div>
+  {{end}}
+
+  {{if .Groups}}
+  <div class="controls" hidden id="controls">
+    {{if .Grouped}}<button type="button" id="openall">expand all</button><button type="button" id="shutall">collapse all</button>{{end}}
+    {{if .VaryCount}}<label><input type="checkbox" id="only"> show only the {{.VaryCount}} row{{if ne .VaryCount 1}}s{{end}} whose columns do not all read the same</label>{{end}}
+  </div>
+  {{end}}
+
+  <div class="scroll">
+    {{if .Groups}}
+    <table id="grid">
+      <thead>
+        <tr>{{range .Columns}}<th scope="col">{{.}}</th>{{end}}</tr>
+      </thead>
+      {{range $i, $g := .Groups}}
+      {{if and $.Grouped $g.Name}}
+      <tbody class="group-head">
+        <tr><th class="group" colspan="{{$.ColumnCount}}"><button class="grouphead" type="button" aria-expanded="true" data-group="{{$i}}"><span class="caret">&#9662;</span>{{$g.Name}}<span class="count">{{len $g.Rows}}</span></button></th></tr>
+      </tbody>
+      {{end}}
+      <tbody data-body="{{$i}}">
+        {{template "rows" $g.Rows}}
+      </tbody>
+      {{if $g.Loose}}<tbody data-loose="{{$i}}">{{template "rows" $g.Loose}}</tbody>{{end}}
+      {{end}}
+    </table>
+    {{else}}
+    <p class="empty">This view has no rows.</p>
+    {{end}}
+  </div>
+
+<script>
+// Every row is rendered and shown. Script only ever HIDES what a reader asks to
+// hide, so a page with no script running is the whole record rather than part
+// of it.
+(function () {
+  var controls = document.getElementById('controls');
+  if (!controls) return;
+  controls.hidden = false;
+
+  function bodyFor(i) { return document.querySelector('[data-body="' + i + '"]'); }
+
+  document.querySelectorAll('.grouphead').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var body = bodyFor(b.dataset.group);
+      var shut = body.classList.toggle('shut');
+      b.setAttribute('aria-expanded', shut ? 'false' : 'true');
+    });
+  });
+
+  function all(shut) {
+    document.querySelectorAll('.grouphead').forEach(function (b) {
+      bodyFor(b.dataset.group).classList.toggle('shut', shut);
+      b.setAttribute('aria-expanded', shut ? 'false' : 'true');
+    });
+  }
+  var open = document.getElementById('openall');
+  var close = document.getElementById('shutall');
+  if (open) open.addEventListener('click', function () { all(false); });
+  if (close) close.addEventListener('click', function () { all(true); });
+
+  var only = document.getElementById('only');
+  if (only) only.addEventListener('change', function () {
+    document.querySelectorAll('tbody[data-body]').forEach(function (b) {
+      b.classList.toggle('filtered', only.checked);
+    });
+  });
+})();
+</script>
+</div>

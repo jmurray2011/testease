@@ -1,0 +1,7 @@
+# Build output
+/testease
+/dist/
+/.tools/
+
+# Local run records
+/scenario-runs/

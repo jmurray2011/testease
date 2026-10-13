@@ -1,0 +1,154 @@
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - depguard
+    - errorlint
+
+  settings:
+    depguard:
+      # The dependency arrow Observation -> Record -> Judge -> Verdict is a
+      # build constraint, not a diagram.
+      rules:
+        record-imports-nothing-internal:
+          list-mode: lax
+          files:
+            - "**/internal/record/**"
+          allow:
+            - $gostd
+            - github.com/jmurray2011/testease/internal/record
+          deny:
+            - pkg: github.com/jmurray2011/testease/internal
+              desc: internal/record imports nothing internal
+
+        render-imports-record-only:
+          list-mode: lax
+          files:
+            - "**/internal/render/**"
+          allow:
+            - $gostd
+            - github.com/jmurray2011/testease/internal/record
+            - github.com/jmurray2011/testease/internal/render
+          deny:
+            - pkg: github.com/jmurray2011/testease/internal
+              desc: internal/render imports internal/record only
+
+        judge-imports-record-only:
+          list-mode: lax
+          files:
+            - "**/internal/judge/**"
+          allow:
+            - $gostd
+            - github.com/jmurray2011/testease/internal/record
+            - github.com/jmurray2011/testease/internal/judge
+          deny:
+            - pkg: github.com/jmurray2011/testease/internal
+              desc: internal/judge imports internal/record only
+
+        publish-imports-record-only:
+          list-mode: lax
+          files:
+            - "**/internal/publish/**"
+          allow:
+            - $gostd
+            - github.com/jmurray2011/testease/internal/record
+            - github.com/jmurray2011/testease/internal/publish
+          deny:
+            - pkg: github.com/jmurray2011/testease/internal
+              desc: internal/publish imports internal/record only
+
+        # doctor reads declarations, verifies their external input bindings,
+        # and asks a daemon. It never dials a target or writes a record.
+        doctor-reads-declarations-only:
+          list-mode: lax
+          files:
+            - "**/internal/doctor/**"
+          allow:
+            - $gostd
+            - github.com/jmurray2011/testease/internal/scenario
+            - github.com/jmurray2011/testease/internal/judge
+            - github.com/jmurray2011/testease/internal/inputbundle
+            - github.com/jmurray2011/testease/internal/doctor
+          deny:
+            - pkg: github.com/jmurray2011/testease/internal
+              desc: internal/doctor imports declarations and their input verifier only
+
+        # Contracts, not machinery. Both are pure declaration and parsing, so
+        # both stay reachable from anywhere without dragging anything with them.
+        target-imports-nothing-internal:
+          list-mode: lax
+          files:
+            - "**/internal/target/**"
+          allow:
+            - $gostd
+            - github.com/jmurray2011/testease/internal/target
+          deny:
+            - pkg: github.com/jmurray2011/testease/internal
+              desc: internal/target imports nothing internal
+
+        scenario-imports-nothing-internal:
+          list-mode: lax
+          files:
+            - "**/internal/scenario/**"
+          allow:
+            - $gostd
+            - github.com/jmurray2011/testease/internal/scenario
+          deny:
+            - pkg: github.com/jmurray2011/testease/internal
+              desc: internal/scenario imports nothing internal
+
+        backends-speak-only-the-target-contract:
+          list-mode: lax
+          files:
+            - "**/internal/backend/**"
+          allow:
+            - $gostd
+            - github.com/jmurray2011/testease/internal/target
+            - github.com/jmurray2011/testease/internal/backend
+          deny:
+            - pkg: github.com/jmurray2011/testease/internal
+              desc: a backend implements internal/target and knows nothing else
+
+        providers-speak-only-the-target-contract:
+          list-mode: lax
+          files:
+            - "**/internal/provider/**"
+          allow:
+            - $gostd
+            - github.com/jmurray2011/testease/internal/target
+            - github.com/jmurray2011/testease/internal/backend
+            - github.com/jmurray2011/testease/internal/provider
+          deny:
+            - pkg: github.com/jmurray2011/testease/internal
+              desc: a provider resolves targets and knows nothing else
+
+        reap-imports-nothing-internal:
+          list-mode: lax
+          files:
+            - "**/internal/reap/**"
+          allow:
+            - $gostd
+            - github.com/jmurray2011/testease/internal/reap
+          deny:
+            - pkg: github.com/jmurray2011/testease/internal
+              desc: internal/reap decides from labels alone and knows nothing else
+
+        # The runner drives everything and interprets nothing. A view or a
+        # publisher reached from here would put presentation inside the thing
+        # being presented.
+        runner-never-imports-a-view:
+          list-mode: lax
+          files:
+            - "**/internal/runner/**"
+          deny:
+            - pkg: github.com/jmurray2011/testease/internal/render
+              desc: the runner records; rendering is downstream of it
+            - pkg: github.com/jmurray2011/testease/internal/publish
+              desc: the runner records; publication is downstream of it
+            - pkg: github.com/jmurray2011/testease/internal/judge
+              desc: the runner measures; judging is downstream of it
+
+formatters:
+  enable:
+    - gofumpt

@@ -1,0 +1,42 @@
+schema: 1
+name: hello
+question: >
+  Does this machine run a scenario at all, and what does a record look like?
+
+  This is the example, not corpus. It measures nothing anybody needs to know:
+  it boots a stock image, asks the box what it is, and records the answer. What
+  it is FOR is the shape - a host, a step, a probe that writes a fact on fd 3,
+  and an expectation that could fail - so that the first record somebody reads
+  is one they watched being made.
+
+  It needs nothing but a docker daemon. Every other scenario in the corpus
+  needs an artifact store, real packages and a licence, which is why none of
+  them is a first run.
+
+params:
+  # Stock, small, and it HAS BASH - which the runner uses to run a probe, so an
+  # image without one exits 127 before the probe says anything. Measured: this
+  # example was written against alpine and every step reported
+  # `exec: "bash": executable file not found`.
+  image: {default: "debian:12-slim"}
+
+requires: [session]
+
+hosts:
+  box:
+    provider: docker
+    image: "{{.image}}"
+
+steps:
+  # THE PROBE'S EXIT CODE IS THE MEASUREMENT and the expectation is what makes
+  # it a check rather than a log line. Break the probe and this step reports
+  # `unmet`, which is the whole point of running the example twice.
+  - label: ask the box what it is
+    host: box
+    probe: probes/whoami.sh
+    timeout: 60s
+    expect:
+      rc: 0
+      fact.os.kernel: linux
+
+judge: {name: expect, version: "3"}

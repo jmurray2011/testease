@@ -85,7 +85,7 @@ An exclusion must name declared axes. Its values are still recorded in the
 campaign and run scope.
 
 A forward-only compatibility matrix can instead encode each supported pair as
-one axis. This avoids manufacturing backward and same-version cells merely to
+one axis. This avoids manufacturing backward and same-version cells just to
 discard them later. The source and target remain available to host and step
 templates:
 

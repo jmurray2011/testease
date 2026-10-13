@@ -73,7 +73,7 @@ A record is a directory. `events.jsonl` is the evidence - append-only, never
 rewritten, one JSON object per line. Everything else is derived from it and can
 be thrown away:
 
-    events.jsonl     the record. This is the thing.
+    events.jsonl     the record itself
     run.json         a cache of it, rebuildable with `render --view meta`
     steps/           each step's stdout and stderr
     artifacts/       files a step declared it wanted kept
@@ -109,8 +109,8 @@ binary. To install it as `testease`, set `GOBIN` to a directory already on your
 PATH before running `make install`.
 
 Some tests need real substrate and skip without it - a docker daemon for the
-provider tests, `TESTEASE_TEST_WINDOWS_CONTEXT` for the Windows probe. Skipping
-is reported, never silent.
+provider tests, `TESTEASE_TEST_WINDOWS_CONTEXT` for the Windows probe. Skips
+are reported.
 
 ## License
 

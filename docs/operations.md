@@ -287,8 +287,8 @@ path, query, or fragment:
 The record keeps the requested origin, resolved DNS addresses and, for HTTPS,
 the leaf-certificate identity and verification result. The driven suite must
 record application version/build identity because the transport cannot infer
-it honestly. An endpoint target has no execution session and Testease never
-creates or removes it.
+it. An endpoint target has no execution session and Testease never creates or
+removes it.
 
 ## Scenario identity in records
 

@@ -84,6 +84,35 @@ matrix:
 An exclusion must name declared axes. Its values are still recorded in the
 campaign and run scope.
 
+A forward-only compatibility matrix can instead encode each supported pair as
+one axis. This avoids manufacturing backward and same-version cells merely to
+discard them later. The source and target remain available to host and step
+templates:
+
+```yaml
+params:
+  crossing: {values: "5.0.2-to-6.0.3,6.0.3-to-6.2.4", axis: true}
+hosts:
+  box:
+    provider: docker
+    image: "app-under-test:{{crossingTarget .crossing}}"
+    media: ["@fixture-{{crossingSource .crossing}}:/fixture.dump:ro"]
+steps:
+  - label: restore the source fixture
+    host: box
+    probe: probes/restore.ps1
+    args: ["{{crossingSource .crossing}}"]
+```
+
+`crossingSource` and `crossingTarget` accept exactly
+`<source>-to-<target>`. A malformed cell is refused before its target is
+created, and the resolved image is recorded with the target request. `doctor`
+resolves the same declared or `--matrix` scope as `run` and checks every unique
+derived image and media source, so it checks the full set of runs rather than
+an arbitrary representative cell. A templated named input must resolve to one
+of the manifest's declared inputs; the input bundle supplies and hashes that
+finite set before any cell starts.
+
 ## Probe contract
 
 A probe has three separate outputs:

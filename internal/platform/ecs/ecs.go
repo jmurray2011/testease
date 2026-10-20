@@ -340,7 +340,12 @@ func wrapper(script []byte, args, fetch []string) string {
 	b.WriteString("set +e\nprobe=/tmp/testease-probe-$$\nfacts=/tmp/testease-facts-$$\n")
 	b.WriteString("printf '%s' ")
 	b.WriteString(shellQuote(base64.StdEncoding.EncodeToString(script)))
-	b.WriteString(" | base64 -d > \"$probe\"\nchmod 700 \"$probe\"\nexport TESTEASE_FACTS=\"$facts\"\n/bin/sh \"$probe\"")
+	b.WriteString(" | base64 -d > \"$probe\"\nchmod 700 \"$probe\"\nexport TESTEASE_FACTS=\"$facts\"\n")
+	if bytes.HasPrefix(script, []byte("#!")) {
+		b.WriteString("\"$probe\"")
+	} else {
+		b.WriteString("/bin/sh \"$probe\"")
+	}
 	for _, arg := range args {
 		b.WriteByte(' ')
 		b.WriteString(shellQuote(arg))

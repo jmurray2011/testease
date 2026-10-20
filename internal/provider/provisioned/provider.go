@@ -4,9 +4,15 @@ package provisioned
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"io"
+	"io/fs"
 	"maps"
 	"os"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/jmurray2011/testease/internal/target"
@@ -101,11 +107,14 @@ type createdTarget struct {
 	provider *Provider
 	spec     target.Spec
 	machine  Machine
+	mu       sync.Mutex
+	session  target.Session
 }
 
 var (
 	_ target.Target    = (*createdTarget)(nil)
 	_ target.Sessioner = (*createdTarget)(nil)
+	_ target.MediaStager = (*createdTarget)(nil)
 )
 
 func (t *createdTarget) Identity() target.Identity {
@@ -129,6 +138,11 @@ func (t *createdTarget) Identity() target.Identity {
 func (t *createdTarget) Labels() map[string]string { return maps.Clone(t.machine.Labels) }
 
 func (t *createdTarget) Session(ctx context.Context) (target.Session, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.session != nil {
+		return t.session, nil
+	}
 	budget := max(MinWaitBudget, t.spec.BootTimeout)
 	if err := t.provider.opt.Driver.WaitDialable(ctx, t.machine, budget); err != nil {
 		return nil, err
@@ -136,5 +150,81 @@ func (t *createdTarget) Session(ctx context.Context) (target.Session, error) {
 	if t.provider.opt.Dial == nil {
 		return nil, fmt.Errorf("%s has no session transport", t.provider.opt.Name)
 	}
-	return t.provider.opt.Dial(ctx, t.machine)
+	session, err := t.provider.opt.Dial(ctx, t.machine)
+	if err != nil {
+		return nil, err
+	}
+	t.session = session
+	return session, nil
+}
+
+// Stage copies media through the session and reads it back across the target
+// boundary. A named input must still have the digest the caller declared.
+func (t *createdTarget) Stage(ctx context.Context, items []target.Media) error {
+	session, err := t.Session(ctx)
+	if err != nil {
+		return err
+	}
+	for _, item := range items {
+		if item.Source == "" || item.Dest == "" {
+			return fmt.Errorf("media needs both source and destination")
+		}
+		info, err := os.Stat(item.Source)
+		if err != nil {
+			return fmt.Errorf("stat media %s: %w", item.Source, err)
+		}
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("media %s is not a regular file", item.Source)
+		}
+		file, err := os.Open(item.Source)
+		if err != nil {
+			return err
+		}
+		mode := fs.FileMode(0o600)
+		if info.Mode().Perm()&0o111 != 0 {
+			mode = 0o700
+		}
+		if item.ReadOnly {
+			mode &= 0o555
+		}
+		putErr := session.Put(ctx, file, item.Dest, mode)
+		closeErr := file.Close()
+		if putErr != nil {
+			return fmt.Errorf("stage media %s: %w", item.Source, putErr)
+		}
+		if closeErr != nil {
+			return closeErr
+		}
+		local, err := os.Open(item.Source)
+		if err != nil {
+			return err
+		}
+		localHash := sha256.New()
+		_, hashErr := io.Copy(localHash, local)
+		_ = local.Close()
+		if hashErr != nil {
+			return hashErr
+		}
+		want := hex.EncodeToString(localHash.Sum(nil))
+		if declared := strings.TrimPrefix(strings.ToLower(item.SHA256), "sha256:"); declared != "" && declared != want {
+			return fmt.Errorf("local media %s changed since input resolution", item.Source)
+		}
+		remote, err := session.Fetch(ctx, item.Dest)
+		if err != nil {
+			return fmt.Errorf("read staged media %s: %w", item.Dest, err)
+		}
+		remoteHash := sha256.New()
+		_, hashErr = io.Copy(remoteHash, remote)
+		closeErr = remote.Close()
+		if hashErr != nil {
+			return hashErr
+		}
+		if closeErr != nil {
+			return closeErr
+		}
+		if got := hex.EncodeToString(remoteHash.Sum(nil)); got != want {
+			return fmt.Errorf("staged media %s differs from source (sha256 %s, want %s)", item.Dest, got, want)
+		}
+	}
+	return nil
 }

@@ -19,6 +19,7 @@ import (
 	ssmbackend "github.com/jmurray2011/testease/internal/backend/ssm"
 	"github.com/jmurray2011/testease/internal/doctor"
 	"github.com/jmurray2011/testease/internal/platform/ec2"
+	"github.com/jmurray2011/testease/internal/platform/ecs"
 	"github.com/jmurray2011/testease/internal/runner"
 	"github.com/jmurray2011/testease/internal/scenario"
 )
@@ -122,6 +123,7 @@ func doDoctor(cmd *cobra.Command, args []string) error {
 		Provision:             provision,
 		Platforms: map[string]doctor.Platform{
 			"ec2": ec2.Driver{CLI: awsClient, Profile: binding.Profile, Region: binding.Region},
+			"ecs": ecs.Driver{CLI: awsClient, Profile: binding.Profile, Region: binding.Region},
 		},
 	})
 

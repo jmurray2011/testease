@@ -6,6 +6,7 @@ import (
 
 	ssmbackend "github.com/jmurray2011/testease/internal/backend/ssm"
 	"github.com/jmurray2011/testease/internal/platform/ec2"
+	"github.com/jmurray2011/testease/internal/platform/ecs"
 	"github.com/jmurray2011/testease/internal/provider/provisioned"
 	"github.com/jmurray2011/testease/internal/target"
 )
@@ -24,5 +25,9 @@ func cloudProviders(binding awsAccountBinding, runID, runner, transferStore stri
 			return &ssmbackend.Session{Client: client, Instance: instance}, nil
 		},
 	})
-	return map[string]target.Provider{"ec2": provider}
+	ecsProvider := provisioned.New(provisioned.Options{
+		Driver: ecs.Driver{CLI: client, Profile: binding.Profile, Region: binding.Region},
+		Name: "ecs", RunID: runID, Runner: runner,
+	})
+	return map[string]target.Provider{"ec2": provider, "ecs": ecsProvider}
 }

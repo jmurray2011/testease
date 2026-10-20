@@ -52,6 +52,11 @@ func backendKinds() []backendKind {
 			Needs: "an explicit AWS profile and region, plus instance type, subnet and instance profile in target-catalog provision",
 		},
 		{
+			Provider: "ecs", Dials: "one Fargate task per probe", Creates: true,
+			Capabilities: []string{"oneshot"},
+			Needs: "an explicit AWS profile and region, plus a matching ECR image, Fargate task definition, cluster and network in target-catalog provision",
+		},
+		{
 			Provider: "hyperv", Dials: "one container per command", Creates: true,
 			Capabilities: []string{"oneshot", "carry"},
 		},

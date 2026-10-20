@@ -126,7 +126,14 @@ func platformFate(runsDir, platform string, machine provisioned.Machine) (reap.F
 	if !intent {
 		return reap.Unprovable, "record does not authorize release of this target"
 	}
-	return reap.Orphaned, "record contains a matching durable release intent"
+	active, err := record.WriterLocked(dir)
+	if err != nil {
+		return reap.Unprovable, fmt.Sprintf("could not verify record writer lock: %v", err)
+	}
+	if active {
+		return reap.Live, "the run record still has an active writer"
+	}
+	return reap.Orphaned, "record contains a matching durable release intent and no active writer"
 }
 
 func safeRecordSegment(value string) bool {

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -76,6 +77,24 @@ func Open(dir string) (*Writer, error) {
 		return nil, err
 	}
 	return &Writer{dir: dir, f: f, seq: seq, pendingNL: torn}, nil
+}
+
+// WriterLocked reports whether another process still owns the record writer's
+// lock. A reaper must not act on release intent while that writer is active.
+// Lock errors other than contention are returned rather than treated as proof.
+func WriterLocked(dir string) (bool, error) {
+	f, err := os.Open(filepath.Join(dir, EventsFile))
+	if err != nil {
+		return false, err
+	}
+	defer f.Close()
+	if err := lockExclusive(f); err != nil {
+		if errors.Is(err, syscall.EWOULDBLOCK) || errors.Is(err, syscall.EAGAIN) {
+			return true, nil
+		}
+		return false, err
+	}
+	return false, nil
 }
 
 // tornTail reports whether the events file ends mid-line.

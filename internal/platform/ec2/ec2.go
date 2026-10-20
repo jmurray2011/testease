@@ -35,6 +35,54 @@ func (d Driver) check() error {
 	return nil
 }
 
+// Check verifies the account and launch inputs without creating a resource.
+func (d Driver) Check(ctx context.Context, image string, provision map[string]string) error {
+	if err := d.check(); err != nil {
+		return err
+	}
+	if image == "" {
+		return errors.New("EC2 host needs an AMI id")
+	}
+	for _, key := range []string{"ec2.instance_type", "ec2.subnet_id", "ec2.instance_profile"} {
+		if provision[key] == "" {
+			return fmt.Errorf("EC2 requires catalog provision setting %q", key)
+		}
+	}
+	out, err := d.CLI.Output(ctx, "sts", "get-caller-identity", "--output", "json")
+	if err != nil {
+		return fmt.Errorf("resolve AWS profile %q: %w", d.Profile, err)
+	}
+	var caller struct{ Account string }
+	if err := json.Unmarshal(out, &caller); err != nil || caller.Account == "" {
+		return fmt.Errorf("AWS profile %q returned no account identity", d.Profile)
+	}
+	out, err = d.CLI.Output(ctx, "ec2", "describe-images", "--image-ids", image, "--output", "json")
+	if err != nil {
+		return fmt.Errorf("find AMI %s in %s: %w", image, d.Region, err)
+	}
+	var images struct{ Images []struct{ ImageID string `json:"ImageId"` } }
+	if err := json.Unmarshal(out, &images); err != nil || len(images.Images) != 1 || images.Images[0].ImageID != image {
+		return fmt.Errorf("AMI %s was not found in %s", image, d.Region)
+	}
+	out, err = d.CLI.Output(ctx, "ec2", "describe-subnets", "--subnet-ids", provision["ec2.subnet_id"], "--output", "json")
+	if err != nil {
+		return fmt.Errorf("find subnet %s: %w", provision["ec2.subnet_id"], err)
+	}
+	var subnets struct{ Subnets []struct{ SubnetID string `json:"SubnetId"` } }
+	if err := json.Unmarshal(out, &subnets); err != nil || len(subnets.Subnets) != 1 || subnets.Subnets[0].SubnetID != provision["ec2.subnet_id"] {
+		return fmt.Errorf("subnet %s was not found in %s", provision["ec2.subnet_id"], d.Region)
+	}
+	out, err = d.CLI.Output(ctx, "iam", "get-instance-profile", "--instance-profile-name", provision["ec2.instance_profile"], "--output", "json")
+	if err != nil {
+		return fmt.Errorf("find instance profile %s: %w", provision["ec2.instance_profile"], err)
+	}
+	var profile struct{ InstanceProfile struct{ Name string `json:"InstanceProfileName"` } `json:"InstanceProfile"` }
+	if err := json.Unmarshal(out, &profile); err != nil || profile.InstanceProfile.Name != provision["ec2.instance_profile"] {
+		return fmt.Errorf("instance profile %s was not found", provision["ec2.instance_profile"])
+	}
+	return nil
+}
+
 func (d Driver) Create(ctx context.Context, req provisioned.Request) (provisioned.Machine, error) {
 	if err := d.check(); err != nil {
 		return provisioned.Machine{}, err

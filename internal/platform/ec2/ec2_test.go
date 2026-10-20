@@ -21,8 +21,38 @@ func (f *fakeCLI) Output(_ context.Context, args ...string) ([]byte, error) {
 		return []byte(`{"InstanceInformationList":[{"InstanceId":"i-fictional","PingStatus":"Online"}]}`), nil
 	case "ec2 describe-instances":
 		return []byte(`{"Reservations":[{"Instances":[{"InstanceId":"i-fictional","ImageId":"ami-fictional","State":{"Name":"running"},"Tags":[{"Key":"testease.run","Value":"run-fictional"},{"Key":"testease.runner","Value":"operator@workstation"}]}]}]}`), nil
+	case "sts get-caller-identity":
+		return []byte(`{"Account":"000000000000"}`), nil
+	case "ec2 describe-images":
+		return []byte(`{"Images":[{"ImageId":"ami-fictional"}]}`), nil
+	case "ec2 describe-subnets":
+		return []byte(`{"Subnets":[{"SubnetId":"subnet-fictional"}]}`), nil
+	case "iam get-instance-profile":
+		return []byte(`{"InstanceProfile":{"InstanceProfileName":"fictional-instance-profile"}}`), nil
 	default:
 		return []byte(`{}`), nil
+	}
+}
+
+func TestEC2DoctorChecksLaunchPrerequisites(t *testing.T) {
+	t.Parallel()
+	cli := &fakeCLI{}
+	driver := Driver{CLI: cli, Profile: "fictional-profile", Region: "us-east-1"}
+	err := driver.Check(context.Background(), "ami-fictional", map[string]string{
+		"ec2.instance_type": "t3.small", "ec2.subnet_id": "subnet-fictional",
+		"ec2.instance_profile": "fictional-instance-profile",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var calls string
+	for _, call := range cli.calls {
+		calls += strings.Join(call, " ") + "\n"
+	}
+	for _, want := range []string{"sts get-caller-identity", "ec2 describe-images", "ec2 describe-subnets", "iam get-instance-profile"} {
+		if !strings.Contains(calls, want) {
+			t.Errorf("doctor calls lack %q: %s", want, calls)
+		}
 	}
 }
 

@@ -121,6 +121,18 @@ type fakeProvider struct {
 	err         error
 }
 
+type captureSpecProvider struct {
+	target target.Target
+	spec   target.Spec
+}
+
+func (p *captureSpecProvider) Resolve(_ context.Context, spec target.Spec) (target.Target, error) {
+	p.spec = spec
+	return p.target, nil
+}
+
+func (p *captureSpecProvider) Release(context.Context, target.Target, bool) error { return nil }
+
 type mediaTarget struct {
 	*fakeTarget
 	staged []target.Media
@@ -205,6 +217,28 @@ steps:
     host: box
     probe: probes/one.sh
 `
+
+func TestProvisionSettingsReachProviderWithoutBecomingScenarioParams(t *testing.T) {
+	t.Parallel()
+	provider := &captureSpecProvider{target: &fakeTarget{session: &fakeSession{run: exits(0, "ok\n")}}}
+	provision := map[string]string{"ec2.instance_type": "t3.small"}
+	p := plan(t, oneStep)
+	_, err := runner.Run(context.Background(), runner.Options{
+		Plan:      p,
+		RunsDir:   t.TempDir(),
+		Provision: provision,
+		Providers: map[string]target.Provider{"fake": provider},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := provider.spec.Provision["ec2.instance_type"]; got != "t3.small" {
+		t.Errorf("provider setting = %q", got)
+	}
+	if _, ok := p.Params["ec2.instance_type"]; ok {
+		t.Error("provision setting became a scenario param")
+	}
+}
 
 func exits(rc int, stdout string) func([]byte, []string, target.RunOpts) (target.Result, error) {
 	return func(_ []byte, _ []string, opt target.RunOpts) (target.Result, error) {

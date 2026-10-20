@@ -131,7 +131,7 @@ func (d Driver) Create(ctx context.Context, req provisioned.Request) (provisione
 		"--instance-type", req.Provision["ec2.instance_type"],
 		"--subnet-id", req.Provision["ec2.subnet_id"],
 		"--iam-instance-profile", "Name=" + req.Provision["ec2.instance_profile"],
-		"--min-count", "1", "--max-count", "1",
+		"--count", "1",
 		"--tag-specifications", string(tagSpec), "--output", "json",
 	}
 	if group := req.Provision["ec2.security_group_id"]; group != "" {

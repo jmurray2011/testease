@@ -1,11 +1,21 @@
 package main
 
 import (
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestCloudProvidersRegistersEC2(t *testing.T) {
+	t.Parallel()
+	providers := cloudProviders(awsAccountBinding{Profile: "fictional-profile", Region: "us-east-1"},
+		"run-fictional", "operator@workstation", "", slog.Default())
+	if providers["ec2"] == nil {
+		t.Fatal("EC2 was not registered as a target provider")
+	}
+}
 
 func TestAWSBindingUsesCatalogAndRefusesAccountDisagreement(t *testing.T) {
 	t.Parallel()

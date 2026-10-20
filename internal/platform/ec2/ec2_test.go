@@ -2,6 +2,7 @@ package ec2
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -92,5 +93,50 @@ func TestEC2DriverCreatesLabelsAndFindsItsInstance(t *testing.T) {
 	}
 	if got := strings.Join(cli.calls[len(cli.calls)-1], " "); !strings.Contains(got, "terminate-instances --instance-ids i-fictional") {
 		t.Errorf("destroy call = %q", got)
+	}
+}
+
+type uncertainLaunchCLI struct {
+	fakeCLI
+	launches [][]string
+}
+
+func (f *uncertainLaunchCLI) Output(ctx context.Context, args ...string) ([]byte, error) {
+	if len(args) >= 2 && args[0] == "ec2" && args[1] == "run-instances" {
+		f.launches = append(f.launches, args)
+		if len(f.launches) == 1 {
+			return nil, errors.New("connection ended after AWS accepted launch")
+		}
+	}
+	return f.fakeCLI.Output(ctx, args...)
+}
+
+func TestEC2CreateRetriesUncertainLaunchWithSameToken(t *testing.T) {
+	t.Parallel()
+	cli := &uncertainLaunchCLI{}
+	driver := Driver{CLI: cli, Profile: "fictional-profile", Region: "us-east-1"}
+	machine, err := driver.Create(context.Background(), provisioned.Request{
+		Image: "ami-fictional",
+		Labels: map[string]string{
+			target.LabelRun: "run-fictional", target.LabelRunner: "operator@workstation",
+			target.LabelHost: "box", target.LabelCell: "cell-fictional",
+		},
+		Provision: map[string]string{
+			"ec2.instance_type": "t3.small", "ec2.subnet_id": "subnet-fictional",
+			"ec2.instance_profile": "fictional-instance-profile",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if machine.ID != "i-fictional" || len(cli.launches) != 2 {
+		t.Errorf("machine=%+v launches=%d", machine, len(cli.launches))
+	}
+	if len(cli.launches) == 2 {
+		first := strings.Join(cli.launches[0], " ")
+		second := strings.Join(cli.launches[1], " ")
+		if first != second || !strings.Contains(first, "--client-token ") {
+			t.Errorf("launch retries use different or missing idempotency token: %q; %q", first, second)
+		}
 	}
 }

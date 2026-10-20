@@ -20,6 +20,19 @@ func TestStaticHostsAdvertiseTheMediaTheyCanStage(t *testing.T) {
 	t.Fatal("static backend is absent from the advertised backend contract")
 }
 
+func TestEC2AdvertisesItsSessionAndMediaCapabilities(t *testing.T) {
+	t.Parallel()
+	for _, kind := range backendKinds() {
+		if kind.Provider == "ec2" {
+			if !kind.Creates || !slices.Contains(kind.Capabilities, "session") || !slices.Contains(kind.Capabilities, "media") {
+				t.Errorf("EC2 capability declaration = %+v", kind)
+			}
+			return
+		}
+	}
+	t.Fatal("EC2 is absent from the backend contract")
+}
+
 func TestDoctorAcceptsTheInstrumentThatMakesDockerFingerprintable(t *testing.T) {
 	t.Parallel()
 

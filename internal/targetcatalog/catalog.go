@@ -26,9 +26,10 @@ type Catalog struct {
 }
 
 type Profile struct {
-	Name   string            `yaml:"name" json:"name"`
-	Tags   []string          `yaml:"tags,omitempty" json:"tags,omitempty"`
-	Params map[string]string `yaml:"params" json:"params"`
+	Name      string            `yaml:"name" json:"name"`
+	Tags      []string          `yaml:"tags,omitempty" json:"tags,omitempty"`
+	Params    map[string]string `yaml:"params" json:"params"`
+	Provision map[string]string `yaml:"provision,omitempty" json:"provision,omitempty"`
 }
 
 type Selector struct {
@@ -90,6 +91,11 @@ func Load(path string) (*Catalog, error) {
 		for key := range profile.Params {
 			if strings.TrimSpace(key) == "" {
 				return nil, fmt.Errorf("target catalog %s target %q has an empty parameter name", path, profile.Name)
+			}
+		}
+		for key := range profile.Provision {
+			if strings.TrimSpace(key) == "" {
+				return nil, fmt.Errorf("target catalog %s target %q has an empty provision setting name", path, profile.Name)
 			}
 		}
 	}

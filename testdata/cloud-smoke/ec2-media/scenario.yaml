@@ -1,0 +1,25 @@
+schema: 1
+name: ec2-media-smoke
+question: Can an EC2 host receive media and return the expected evidence?
+params:
+  image: {}
+  payload: {}
+hosts:
+  box:
+    provider: ec2
+    backend: ssm
+    image: "{{.image}}"
+    media: ["{{.payload}}:/tmp/testease-smoke-payload.bin:ro"]
+requires: [session, media]
+steps:
+  - label: verify staged media
+    host: box
+    probe: probes/check.sh
+    timeout: 120s
+    expect:
+      rc: 0
+      fact.media.sha256: ad7facb2586fc6e966c004d7d1d16b024f5805ff7cb47c7a85dabd8b48892ca7
+      fact.media.bytes: "4096"
+artifacts:
+  - {step: verify staged media, from: /tmp/testease-smoke-media-echo.txt, as: media-echo.txt, when: always, required: true}
+judge: {name: expect, version: "3"}

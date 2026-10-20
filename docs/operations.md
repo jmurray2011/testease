@@ -104,6 +104,56 @@ testease reap --platform ec2 --aws-profile operator-profile \
   --aws-region us-east-1 --runner operator@workstation --runs-dir runs --force
 ```
 
+### Cloud smoke scenarios
+
+The account-neutral scenarios under `testdata/cloud-smoke` exercise both
+provisioned surfaces. They require their artifacts, so a missing transfer leaves
+the run `infra-fail` even if the probe exits zero. Run them explicitly against
+catalog entries in the intended account. First check the profile's account:
+
+```sh
+aws sts get-caller-identity --profile "$AWS_PROFILE" --region "$AWS_REGION"
+```
+
+For EC2, make a 4 KiB payload and use a catalog entry with the EC2 settings
+above. The selected AMI needs `sha256sum`, `wc`, `cut`, and `tr` in addition to
+the SSM agent. Use an empty runs directory or a fresh run ID for each trial:
+
+```sh
+head -c 4096 /dev/zero > /tmp/testease-smoke-payload.bin
+testease doctor ec2-media --strict --scenario-root testdata/cloud-smoke \
+  --param image="$EC2_AMI" --param payload=/tmp/testease-smoke-payload.bin \
+  --target ec2-smoke --target-catalog "$EC2_CATALOG" \
+  --aws-profile "$AWS_PROFILE" --aws-region "$AWS_REGION"
+testease run ec2-media --scenario-root testdata/cloud-smoke \
+  --param image="$EC2_AMI" --param payload=/tmp/testease-smoke-payload.bin \
+  --target ec2-smoke --target-catalog "$EC2_CATALOG" \
+  --aws-profile "$AWS_PROFILE" --aws-region "$AWS_REGION" \
+  --runs-dir "$RUNS_DIR" --release-failed-targets
+```
+
+For ECS, use a catalog entry with the ECS settings above and a matching
+single-container Fargate task definition. The image needs `/bin/sh`, `head`,
+`sha256sum`, `wc`, `cut`, and `tr`:
+
+```sh
+testease doctor ecs-artifact --strict --scenario-root testdata/cloud-smoke \
+  --param image="$ECS_IMAGE" --target ecs-smoke \
+  --target-catalog "$ECS_CATALOG" \
+  --aws-profile "$AWS_PROFILE" --aws-region "$AWS_REGION"
+testease run ecs-artifact --scenario-root testdata/cloud-smoke \
+  --param image="$ECS_IMAGE" --target ecs-smoke \
+  --target-catalog "$ECS_CATALOG" \
+  --aws-profile "$AWS_PROFILE" --aws-region "$AWS_REGION" \
+  --runs-dir "$RUNS_DIR" --release-failed-targets
+```
+
+Each run writes an `expect@3` verdict and the fetched file under its record's
+`artifacts/` directory. The ECS file should contain 70,000 zero bytes with
+SHA-256 `f51b279903037b37ea1828a1021499995718d38016cad6c0da30962a41be052f`.
+The EC2 artifact contains the staged payload's SHA-256. Keep account IDs,
+subnets, role names, and task definition ARNs in the private catalogs.
+
 ## Campaigns
 
 A campaign groups related runs and records their setup, parameters, cleanup, and

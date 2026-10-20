@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -42,6 +43,14 @@ func TestCloudSmokeScenariosResolveWithoutAccountSettings(t *testing.T) {
 			}
 			if plan.Judge == nil || plan.Judge.Name != "expect" || len(plan.Artifacts) != 1 || !plan.Artifacts[0].Required {
 				t.Errorf("scenario must judge the probe and require its returned artifact: judge=%+v artifacts=%+v", plan.Judge, plan.Artifacts)
+			}
+			for _, step := range plan.Steps {
+				info, err := os.Stat(filepath.Join(plan.Dir, step.Probe))
+				if err != nil {
+					t.Errorf("probe %s: %v", step.Probe, err)
+				} else if info.Mode()&0o111 == 0 {
+					t.Errorf("probe %s is not executable", step.Probe)
+				}
 			}
 		})
 	}

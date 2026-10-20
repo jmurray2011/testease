@@ -1,0 +1,22 @@
+schema: 1
+name: ecs-artifact-smoke
+question: Can a Fargate task return a chunked artifact intact?
+params:
+  image: {}
+hosts:
+  box:
+    provider: ecs
+    image: "{{.image}}"
+requires: [oneshot]
+steps:
+  - label: make artifact
+    host: box
+    probe: probes/make.sh
+    timeout: 180s
+    expect:
+      rc: 0
+      fact.artifact.size: "70000"
+      fact.artifact.sha256: f51b279903037b37ea1828a1021499995718d38016cad6c0da30962a41be052f
+artifacts:
+  - {step: make artifact, from: /tmp/testease-smoke-large-artifact.bin, as: large-artifact.bin, when: always, required: true}
+judge: {name: expect, version: "3"}

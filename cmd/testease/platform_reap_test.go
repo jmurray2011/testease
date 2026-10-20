@@ -12,13 +12,14 @@ import (
 )
 
 type fakePlatformInventory struct {
-	machines []provisioned.Machine
+	machines  []provisioned.Machine
 	destroyed []string
 }
 
 func (f *fakePlatformInventory) List(context.Context, map[string]string) ([]provisioned.Machine, error) {
 	return f.machines, nil
 }
+
 func (f *fakePlatformInventory) Destroy(_ context.Context, machine provisioned.Machine) error {
 	f.destroyed = append(f.destroyed, machine.ID)
 	return nil
@@ -36,19 +37,26 @@ func TestPlatformReapForcesOnlyProvedRelease(t *testing.T) {
 		{"release-box", "i-release", "release-intended"},
 		{"kept-box", "i-kept", "retained"},
 	} {
-		_, _ = w.Emit(record.KindTargetResolved, 0, record.TargetResolved{Host: item.host,
-			Resolved: map[string]any{"ref": "ec2:" + item.id}})
+		_, _ = w.Emit(record.KindTargetResolved, 0, record.TargetResolved{
+			Host:     item.host,
+			Resolved: map[string]any{"ref": "ec2:" + item.id},
+		})
 		_, _ = w.Emit(record.KindTargetDisposition, 0, record.TargetDisposition{
-			Host: item.host, Ref: "ec2:" + item.id, Action: item.action})
+			Host: item.host, Ref: "ec2:" + item.id, Action: item.action,
+		})
 	}
 	if err := w.Close(); err != nil {
 		t.Fatal(err)
 	}
 	inventory := &fakePlatformInventory{}
 	for _, item := range []struct{ host, id string }{{"release-box", "i-release"}, {"kept-box", "i-kept"}} {
-		inventory.machines = append(inventory.machines, provisioned.Machine{ID: item.id,
-			Labels: map[string]string{target.LabelRun: "run-fictional", target.LabelHost: item.host,
-				target.LabelRunner: "operator@workstation"}})
+		inventory.machines = append(inventory.machines, provisioned.Machine{
+			ID: item.id,
+			Labels: map[string]string{
+				target.LabelRun: "run-fictional", target.LabelHost: item.host,
+				target.LabelRunner: "operator@workstation",
+			},
+		})
 	}
 	report := platformReap(context.Background(), inventory, "ec2", runsDir, "operator@workstation", true)
 	if report.Removable != 1 || len(report.Removed) != 1 || report.Removed[0] != "i-release" {
@@ -62,8 +70,10 @@ func TestPlatformReapForcesOnlyProvedRelease(t *testing.T) {
 func TestReapAcceptsAnExplicitECSCluster(t *testing.T) {
 	t.Parallel()
 	cmd := reapCmd()
-	if err := cmd.ParseFlags([]string{"--platform", "ecs", "--ecs-cluster", "fictional-cluster",
-		"--aws-profile", "fictional-profile", "--aws-region", "us-east-1"}); err != nil {
+	if err := cmd.ParseFlags([]string{
+		"--platform", "ecs", "--ecs-cluster", "fictional-cluster",
+		"--aws-profile", "fictional-profile", "--aws-region", "us-east-1",
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if got := flagString(cmd, "ecs-cluster"); got != "fictional-cluster" {
@@ -91,10 +101,13 @@ func TestPlatformReapRequiresMatchingReleaseIntent(t *testing.T) {
 				t.Fatal(err)
 			}
 			_, _ = w.Emit(record.KindRunStarted, 0, record.RunStarted{RunID: "run-fictional"})
-			_, _ = w.Emit(record.KindTargetResolved, 0, record.TargetResolved{Host: "box",
-				Resolved: map[string]any{"ref": "ec2:i-fictional"}})
+			_, _ = w.Emit(record.KindTargetResolved, 0, record.TargetResolved{
+				Host:     "box",
+				Resolved: map[string]any{"ref": "ec2:i-fictional"},
+			})
 			_, _ = w.Emit(record.KindTargetDisposition, 0, record.TargetDisposition{
-				Host: "box", Ref: "ec2:i-fictional", Action: tc.action})
+				Host: "box", Ref: "ec2:i-fictional", Action: tc.action,
+			})
 			_, _ = w.Emit(record.KindRunFinished, 0, record.RunFinished{Status: record.StatusMeasured})
 			if err := w.Close(); err != nil {
 				t.Fatal(err)

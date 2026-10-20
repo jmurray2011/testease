@@ -12,8 +12,10 @@ import (
 )
 
 func cloudProviders(binding awsAccountBinding, runID, runner, transferStore string, log *slog.Logger) map[string]target.Provider {
-	client := ssmbackend.Client{Profile: binding.Profile, Region: binding.Region,
-		TransferStore: transferStore, Log: log}
+	client := ssmbackend.Client{
+		Profile: binding.Profile, Region: binding.Region,
+		TransferStore: transferStore, Log: log,
+	}
 	driver := ec2.Driver{CLI: client, Profile: binding.Profile, Region: binding.Region}
 	provider := provisioned.New(provisioned.Options{
 		Driver: driver, Name: "ec2", RunID: runID, Runner: runner,
@@ -27,7 +29,7 @@ func cloudProviders(binding awsAccountBinding, runID, runner, transferStore stri
 	})
 	ecsProvider := provisioned.New(provisioned.Options{
 		Driver: ecs.Driver{CLI: client, Profile: binding.Profile, Region: binding.Region},
-		Name: "ecs", RunID: runID, Runner: runner,
+		Name:   "ecs", RunID: runID, Runner: runner,
 	})
 	return map[string]target.Provider{"ec2": provider, "ecs": ecsProvider}
 }

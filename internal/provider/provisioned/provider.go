@@ -128,8 +128,8 @@ type createdTarget struct {
 }
 
 var (
-	_ target.Target    = (*createdTarget)(nil)
-	_ target.Sessioner = (*createdTarget)(nil)
+	_ target.Target      = (*createdTarget)(nil)
+	_ target.Sessioner   = (*createdTarget)(nil)
 	_ target.MediaStager = (*createdTarget)(nil)
 )
 
@@ -168,7 +168,9 @@ var (
 )
 
 func (t *oneShotTarget) Identity() target.Identity { return t.created.Identity() }
+
 func (t *oneShotTarget) Labels() map[string]string { return t.created.Labels() }
+
 func (t *oneShotTarget) SetOnCreated(callback func(target.Identity) error) { t.onCreated = callback }
 
 func (t *oneShotTarget) RunOnce(ctx context.Context, script []byte, args []string, opt target.RunOpts) (target.Result, error) {

@@ -246,13 +246,17 @@ func platformChecks(ctx context.Context, plan *scenario.Plan, provision map[stri
 		name := "platform:" + host.Provider
 		platform := platforms[host.Provider]
 		if platform == nil {
-			checks = append(checks, Check{Name: name, Status: Unchecked,
-				Found: "no checker configured for " + host.Provider, Remedy: RemedyBackends})
+			checks = append(checks, Check{
+				Name: name, Status: Unchecked,
+				Found: "no checker configured for " + host.Provider, Remedy: RemedyBackends,
+			})
 			continue
 		}
 		if err := platform.Check(ctx, host.Image, provision); err != nil {
-			checks = append(checks, Check{Name: name, Status: Fail, Found: err.Error(),
-				Remedy: "check the selected target catalog provision settings and AWS access"})
+			checks = append(checks, Check{
+				Name: name, Status: Fail, Found: err.Error(),
+				Remedy: "check the selected target catalog provision settings and AWS access",
+			})
 			continue
 		}
 		checks = append(checks, Check{Name: name, Status: OK, Found: host.Image + " and its launch prerequisites are available"})

@@ -34,43 +34,43 @@ type Kind string
 // record written by something that does repair - an older tool, another
 // implementation - has to be readable here rather than reported as a stranger.
 const (
-	KindRunStarted     Kind = "run-started"
-	KindInputResolved  Kind = "input-resolved"
-	KindTargetResolved Kind = "target-resolved"
-	KindTargetCreated Kind = "target-created"
+	KindRunStarted        Kind = "run-started"
+	KindInputResolved     Kind = "input-resolved"
+	KindTargetResolved    Kind = "target-resolved"
+	KindTargetCreated     Kind = "target-created"
 	KindTargetDisposition Kind = "target-disposition"
-	KindMediaStarted   Kind = "media-stage-started"
-	KindMediaStaged    Kind = "media-staged"
-	KindStepStarted    Kind = "step-started"
-	KindOperation      Kind = "operation"
-	KindFact           Kind = "fact"
-	KindFingerprint    Kind = "fingerprint"
-	KindControlChecked Kind = "control-checked"
-	KindCellStarted    Kind = "cell-started"
-	KindCellFinished   Kind = "cell-finished"
-	KindRunFinished    Kind = "run-finished"
-	KindRecordWarning  Kind = "record-warning"
-	KindRecordRepair   Kind = "record-repair"
+	KindMediaStarted      Kind = "media-stage-started"
+	KindMediaStaged       Kind = "media-staged"
+	KindStepStarted       Kind = "step-started"
+	KindOperation         Kind = "operation"
+	KindFact              Kind = "fact"
+	KindFingerprint       Kind = "fingerprint"
+	KindControlChecked    Kind = "control-checked"
+	KindCellStarted       Kind = "cell-started"
+	KindCellFinished      Kind = "cell-finished"
+	KindRunFinished       Kind = "run-finished"
+	KindRecordWarning     Kind = "record-warning"
+	KindRecordRepair      Kind = "record-repair"
 )
 
 var knownKinds = map[Kind]bool{
-	KindRunStarted:     true,
-	KindInputResolved:  true,
-	KindTargetResolved: true,
-	KindTargetCreated: true,
+	KindRunStarted:        true,
+	KindInputResolved:     true,
+	KindTargetResolved:    true,
+	KindTargetCreated:     true,
 	KindTargetDisposition: true,
-	KindMediaStarted:   true,
-	KindMediaStaged:    true,
-	KindStepStarted:    true,
-	KindOperation:      true,
-	KindFact:           true,
-	KindFingerprint:    true,
-	KindControlChecked: true,
-	KindCellStarted:    true,
-	KindCellFinished:   true,
-	KindRunFinished:    true,
-	KindRecordWarning:  true,
-	KindRecordRepair:   true,
+	KindMediaStarted:      true,
+	KindMediaStaged:       true,
+	KindStepStarted:       true,
+	KindOperation:         true,
+	KindFact:              true,
+	KindFingerprint:       true,
+	KindControlChecked:    true,
+	KindCellStarted:       true,
+	KindCellFinished:      true,
+	KindRunFinished:       true,
+	KindRecordWarning:     true,
+	KindRecordRepair:      true,
 }
 
 // Event is the envelope every line of events.jsonl carries. Kind-specific

@@ -3,6 +3,8 @@ package ec2
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -60,7 +62,11 @@ func (d Driver) Check(ctx context.Context, image string, provision map[string]st
 	if err != nil {
 		return fmt.Errorf("find AMI %s in %s: %w", image, d.Region, err)
 	}
-	var images struct{ Images []struct{ ImageID string `json:"ImageId"` } }
+	var images struct {
+		Images []struct {
+			ImageID string `json:"ImageId"`
+		}
+	}
 	if err := json.Unmarshal(out, &images); err != nil || len(images.Images) != 1 || images.Images[0].ImageID != image {
 		return fmt.Errorf("AMI %s was not found in %s", image, d.Region)
 	}
@@ -68,7 +74,11 @@ func (d Driver) Check(ctx context.Context, image string, provision map[string]st
 	if err != nil {
 		return fmt.Errorf("find subnet %s: %w", provision["ec2.subnet_id"], err)
 	}
-	var subnets struct{ Subnets []struct{ SubnetID string `json:"SubnetId"` } }
+	var subnets struct {
+		Subnets []struct {
+			SubnetID string `json:"SubnetId"`
+		}
+	}
 	if err := json.Unmarshal(out, &subnets); err != nil || len(subnets.Subnets) != 1 || subnets.Subnets[0].SubnetID != provision["ec2.subnet_id"] {
 		return fmt.Errorf("subnet %s was not found in %s", provision["ec2.subnet_id"], d.Region)
 	}
@@ -76,7 +86,11 @@ func (d Driver) Check(ctx context.Context, image string, provision map[string]st
 	if err != nil {
 		return fmt.Errorf("find instance profile %s: %w", provision["ec2.instance_profile"], err)
 	}
-	var profile struct{ InstanceProfile struct{ Name string `json:"InstanceProfileName"` } `json:"InstanceProfile"` }
+	var profile struct {
+		InstanceProfile struct {
+			Name string `json:"InstanceProfileName"`
+		} `json:"InstanceProfile"`
+	}
 	if err := json.Unmarshal(out, &profile); err != nil || profile.InstanceProfile.Name != provision["ec2.instance_profile"] {
 		return fmt.Errorf("instance profile %s was not found", provision["ec2.instance_profile"])
 	}
@@ -107,18 +121,21 @@ func (d Driver) Create(ctx context.Context, req provisioned.Request) (provisione
 	if err != nil {
 		return provisioned.Machine{}, err
 	}
-	args := []string{"ec2", "run-instances", "--image-id", req.Image,
+	var token [16]byte
+	if _, err := rand.Read(token[:]); err != nil {
+		return provisioned.Machine{}, fmt.Errorf("create EC2 client token: %w", err)
+	}
+	args := []string{
+		"ec2", "run-instances", "--image-id", req.Image,
+		"--client-token", hex.EncodeToString(token[:]),
 		"--instance-type", req.Provision["ec2.instance_type"],
 		"--subnet-id", req.Provision["ec2.subnet_id"],
 		"--iam-instance-profile", "Name=" + req.Provision["ec2.instance_profile"],
 		"--min-count", "1", "--max-count", "1",
-		"--tag-specifications", string(tagSpec), "--output", "json"}
+		"--tag-specifications", string(tagSpec), "--output", "json",
+	}
 	if group := req.Provision["ec2.security_group_id"]; group != "" {
 		args = append(args, "--security-group-ids", group)
-	}
-	out, err := d.CLI.Output(ctx, args...)
-	if err != nil {
-		return provisioned.Machine{}, fmt.Errorf("create EC2 instance: %w", err)
 	}
 	var response struct {
 		Instances []struct {
@@ -126,17 +143,39 @@ func (d Driver) Create(ctx context.Context, req provisioned.Request) (provisione
 			ImageID    string `json:"ImageId"`
 		} `json:"Instances"`
 	}
-	if err := json.Unmarshal(out, &response); err != nil {
-		return provisioned.Machine{}, fmt.Errorf("read created EC2 instance: %w", err)
+	var launchErr error
+	for attempt := range 2 {
+		callCtx := ctx
+		if attempt > 0 {
+			// The first request may have reached AWS even when its response did
+			// not reach us. Retry with the same token and a bounded fresh context.
+			var cancel context.CancelFunc
+			callCtx, cancel = context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+			defer cancel()
+		}
+		out, err := d.CLI.Output(callCtx, args...)
+		if err == nil {
+			err = json.Unmarshal(out, &response)
+			if err == nil && len(response.Instances) == 1 && response.Instances[0].InstanceID != "" {
+				launchErr = nil
+				break
+			}
+			if err == nil {
+				err = fmt.Errorf("EC2 create returned %d instances without one usable id", len(response.Instances))
+			}
+		}
+		launchErr = err
 	}
-	if len(response.Instances) != 1 || response.Instances[0].InstanceID == "" {
-		return provisioned.Machine{}, fmt.Errorf("EC2 create returned %d instances without one usable id", len(response.Instances))
+	if launchErr != nil {
+		return provisioned.Machine{}, fmt.Errorf("create EC2 instance with client token %s: %w", hex.EncodeToString(token[:]), launchErr)
 	}
 	id := response.Instances[0].InstanceID
 	return provisioned.Machine{
 		ID: id, Address: id, Image: response.Instances[0].ImageID,
-		Resolved: map[string]any{"ami_id": response.Instances[0].ImageID, "instance_id": id,
-			"account_profile": d.Profile, "region": d.Region},
+		Resolved: map[string]any{
+			"ami_id": response.Instances[0].ImageID, "instance_id": id,
+			"account_profile": d.Profile, "region": d.Region,
+		},
 		Labels: maps.Clone(req.Labels),
 	}, nil
 }
@@ -182,9 +221,11 @@ func (d Driver) List(ctx context.Context, labels map[string]string) ([]provision
 	if labels[target.LabelRunner] == "" {
 		return nil, errors.New("EC2 list requires a testease.runner label filter")
 	}
-	args := []string{"ec2", "describe-instances", "--filters",
+	args := []string{
+		"ec2", "describe-instances", "--filters",
 		"Name=tag:" + target.LabelRunner + ",Values=" + labels[target.LabelRunner],
-		"Name=instance-state-name,Values=pending,running,stopping,stopped", "--output", "json"}
+		"Name=instance-state-name,Values=pending,running,stopping,stopped", "--output", "json",
+	}
 	out, err := d.CLI.Output(ctx, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list EC2 instances: %w", err)
@@ -192,8 +233,8 @@ func (d Driver) List(ctx context.Context, labels map[string]string) ([]provision
 	var response struct {
 		Reservations []struct {
 			Instances []struct {
-				InstanceID string `json:"InstanceId"`
-				ImageID    string `json:"ImageId"`
+				InstanceID string                        `json:"InstanceId"`
+				ImageID    string                        `json:"ImageId"`
 				Tags       []struct{ Key, Value string } `json:"Tags"`
 			} `json:"Instances"`
 		} `json:"Reservations"`
@@ -216,8 +257,10 @@ func (d Driver) List(ctx context.Context, labels map[string]string) ([]provision
 				}
 			}
 			if matches && instance.InstanceID != "" {
-				machines = append(machines, provisioned.Machine{ID: instance.InstanceID,
-					Address: instance.InstanceID, Image: instance.ImageID, Labels: tags})
+				machines = append(machines, provisioned.Machine{
+					ID:      instance.InstanceID,
+					Address: instance.InstanceID, Image: instance.ImageID, Labels: tags,
+				})
 			}
 		}
 	}

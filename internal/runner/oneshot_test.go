@@ -56,6 +56,50 @@ func (t *shotTarget) RunOnce(_ context.Context, script []byte, args []string, op
 
 type shotProvider struct{ target *shotTarget }
 
+type reportingShotTarget struct {
+	shotTarget
+	onCreated func(target.Identity) error
+}
+
+type reportingProvider struct{ target target.Target }
+func (p reportingProvider) Resolve(context.Context, target.Spec) (target.Target, error) { return p.target, nil }
+func (p reportingProvider) Release(context.Context, target.Target, bool) error { return nil }
+
+func (t *reportingShotTarget) SetOnCreated(callback func(target.Identity) error) { t.onCreated = callback }
+func (t *reportingShotTarget) RunOnce(ctx context.Context, script []byte, args []string, opt target.RunOpts) (target.Result, error) {
+	if err := t.onCreated(target.Identity{Resolved: map[string]any{"ref": "ecs:task-fictional", "task_arn": "task-fictional"}}); err != nil {
+		return target.Result{RC: -1}, err
+	}
+	return t.shotTarget.RunOnce(ctx, script, args, opt)
+}
+
+func TestOneShotNativeTaskIsRecordedBeforeRunFinishes(t *testing.T) {
+	t.Parallel()
+	tgt := &reportingShotTarget{}
+	out, err := runner.Run(context.Background(), runner.Options{
+		Plan: plan(t, oneShotScenario), RunsDir: t.TempDir(),
+		Providers: map[string]target.Provider{"fake": reportingProvider{target: tgt}},
+	})
+	if err != nil { t.Fatal(err) }
+	rec, err := record.Read(out.Dir)
+	if err != nil { t.Fatal(err) }
+	var created, intent, finished bool
+	for _, event := range rec.Events {
+		switch event.Kind {
+		case record.KindTargetCreated:
+			item, decodeErr := record.Decode[record.TargetCreated](event)
+			if decodeErr != nil { t.Fatal(decodeErr) }
+			created = item.Host == "box" && item.Ref == "ecs:task-fictional"
+		case record.KindTargetDisposition:
+			item, _ := record.Decode[record.TargetDisposition](event)
+			if item.Ref == "ecs:task-fictional" && item.Action == "release-intended" { intent = created }
+		case record.KindRunFinished:
+			finished = true
+		}
+	}
+	if !created || !intent || !finished { t.Errorf("created=%t intent=%t finished=%t", created, intent, finished) }
+}
+
 func (p *shotProvider) Resolve(_ context.Context, spec target.Spec) (target.Target, error) {
 	p.target.spec = spec
 	return p.target, nil

@@ -139,6 +139,10 @@ func doRun(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	binding, err := awsBinding(cmd, selection)
+	if err != nil {
+		return &runner.PreconditionError{Message: err.Error()}
+	}
 
 	dir := filepath.Join(flagString(cmd, "scenario-root"), args[0])
 	manifest, err := scenario.Load(dir)
@@ -207,14 +211,14 @@ func doRun(cmd *cobra.Command, args []string) error {
 		Memory:      flagString(cmd, "win-memory"),
 		Log:         log,
 	})
-	stat, err := staticProvider(cmd, runID, log, printInstrument)
+	stat, err := staticProvider(cmd, runID, log, printInstrument, binding)
 	if err != nil {
 		return err
 	}
 	state := statefileprovider.New(statefileprovider.Options{
 		Dir:     flagString(cmd, "statefile-dir"),
-		Profile: flagString(cmd, "aws-profile"),
-		Region:  flagString(cmd, "aws-region"),
+		Profile: binding.Profile,
+		Region:  binding.Region,
 		RunID:   runID,
 		Runner:  runnerName(),
 		Log:     log,
@@ -222,6 +226,18 @@ func doRun(cmd *cobra.Command, args []string) error {
 	endpoint := endpointprovider.New(endpointprovider.Options{
 		RunID: runID, Runner: runnerName(),
 	})
+	configuredProviders := providers(docker, oneShot, stat, state, endpoint)
+	for name, provider := range cloudProviders(binding, runID, runnerName(), flagString(cmd, "ssm-transfer-store"), log) {
+		configuredProviders[name] = provider
+	}
+	var provision map[string]string
+	if selection != nil {
+		provision = selection.Profile.Provision
+	}
+	measurement := measurementConditions(cmd, selection)
+	if binding.Region != "" {
+		measurement["aws.region"] = binding.Region
+	}
 
 	secrets, err := driveSecrets(cmd)
 	if err != nil {
@@ -243,11 +259,12 @@ func doRun(cmd *cobra.Command, args []string) error {
 		RunID:                runID,
 		RunsDir:              runsDir,
 		Tool:                 record.ToolRef{Version: version, Commit: commit},
-		Measurement:          measurementConditions(cmd, selection),
+		Measurement:          measurement,
+		Provision:            provision,
 		Inputs:               inputs,
 		Keep:                 keep,
 		ReleaseFailedTargets: releaseFailedTargets,
-		Providers:            providers(docker, oneShot, stat, state, endpoint),
+		Providers:            configuredProviders,
 		Driver:               dockerDriver{client: client},
 		DriveSecrets:         secrets,
 		Observe:              progress.Observe,
@@ -499,7 +516,7 @@ func providers(docker, oneShot, stat, state, endpoint target.Provider) map[strin
 // staticProvider dials machines that already exist. A scenario names them; the
 // way in comes from here, because a manifest is content in a repository and a
 // password in one is a password in a repository.
-func staticProvider(cmd *cobra.Command, runID string, log *slog.Logger, printInstrument *dockerprovider.Instrument) (*static.Provider, error) {
+func staticProvider(cmd *cobra.Command, runID string, log *slog.Logger, printInstrument *dockerprovider.Instrument, binding awsAccountBinding) (*static.Provider, error) {
 	password := ""
 	if file := flagString(cmd, "winrm-password-file"); file != "" {
 		body, err := os.ReadFile(file)
@@ -523,8 +540,8 @@ func staticProvider(cmd *cobra.Command, runID string, log *slog.Logger, printIns
 
 	return static.New(static.Options{
 		SSM: static.SSM{
-			Profile:       flagString(cmd, "aws-profile"),
-			Region:        flagString(cmd, "aws-region"),
+			Profile:       binding.Profile,
+			Region:        binding.Region,
 			TransferStore: flagString(cmd, "ssm-transfer-store"),
 		},
 		WinRM: static.WinRM{

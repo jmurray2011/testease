@@ -72,8 +72,8 @@ func Load(path string) (*Catalog, error) {
 			return nil, fmt.Errorf("target catalog %s names target %q more than once", path, profile.Name)
 		}
 		seen[profile.Name] = true
-		if len(profile.Params) == 0 {
-			return nil, fmt.Errorf("target catalog %s target %q has no params", path, profile.Name)
+		if len(profile.Params) == 0 && len(profile.Provision) == 0 {
+			return nil, fmt.Errorf("target catalog %s target %q has no params or provision settings", path, profile.Name)
 		}
 		seenTags := map[string]bool{}
 		for j, tag := range profile.Tags {

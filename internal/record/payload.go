@@ -174,6 +174,15 @@ type TargetResolved struct {
 	Facts     map[string]string `json:"facts"`
 }
 
+// TargetDisposition records the runner's decision and the provider's outcome
+// for one target. A release-intended event is durable before destruction starts.
+type TargetDisposition struct {
+	Host   string `json:"host"`
+	Ref    string `json:"ref"`
+	Action string `json:"action"`
+	Error  string `json:"error,omitempty"`
+}
+
 // MediaStageStarted is written before one declared file crosses the final
 // boundary onto a target. Name is the portable input name when one exists;
 // local source paths and secret-file sizes never enter this event.

@@ -220,9 +220,19 @@ func runOne(ctx context.Context, opt Options, plan *scenario.Plan, dir, runID, c
 		worst: record.StatusMeasured,
 	}
 	defer r.cleanupSecretFiles()
-	defer r.releaseAll(ctx)
 
 	runErr := r.execute(ctx, runID)
+	// Release uses the final status, including an error returned before a step
+	// could worsen it, and its evidence must precede run-finished.
+	switch {
+	case errors.Is(runErr, context.Canceled):
+		r.worsen(record.StatusInterrupted)
+	case runErr != nil:
+		r.worsen(record.StatusInfraFail)
+	}
+	if releaseErr := r.releaseAll(ctx); releaseErr != nil {
+		runErr = errors.Join(runErr, releaseErr)
+	}
 	r.close(started, runErr)
 	return r.outcome, runErr
 }
@@ -674,7 +684,7 @@ func (r *run) session(ctx context.Context, host string) (target.Session, error) 
 	return s, nil
 }
 
-func (r *run) releaseAll(ctx context.Context) {
+func (r *run) releaseAll(ctx context.Context) error {
 	for _, s := range r.sessions {
 		_ = s.Close()
 	}
@@ -683,15 +693,49 @@ func (r *run) releaseAll(ctx context.Context) {
 	// disposable lane can explicitly choose release over that forensic target.
 	keep := r.opt.Keep || (r.worst != record.StatusMeasured && !r.opt.ReleaseFailedTargets)
 
-	for name, t := range r.targets {
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Minute)
+	defer cancel()
+	var failures []error
+	for _, name := range slices.Sorted(maps.Keys(r.targets)) {
+		t := r.targets[name]
 		provider, ok := r.opt.Providers[r.plan.Hosts[name].Provider]
 		if !ok {
 			continue
 		}
-		if err := provider.Release(ctx, t, keep); err != nil {
-			r.opt.Log.Warn("could not release host", "host", name, "error", err)
+		ref, _ := t.Identity().Resolved["ref"].(string)
+		if !keep {
+			if err := r.disposition(record.TargetDisposition{Host: name, Ref: ref, Action: "release-intended"}); err != nil {
+				failures = append(failures, fmt.Errorf("record release intent for host %q: %w", name, err))
+				continue
+			}
+		}
+		if err := provider.Release(cleanupCtx, t, keep); err != nil {
+			action := "release-failed"
+			if keep {
+				action = "retain-failed"
+			}
+			_ = r.disposition(record.TargetDisposition{Host: name, Ref: ref, Action: action, Error: err.Error()})
+			failures = append(failures, fmt.Errorf("release host %q: %w", name, err))
+			continue
+		}
+		action := "released"
+		if keep {
+			action = "retained"
+		}
+		if err := r.disposition(record.TargetDisposition{Host: name, Ref: ref, Action: action}); err != nil {
+			failures = append(failures, fmt.Errorf("record disposition for host %q: %w", name, err))
 		}
 	}
+	return errors.Join(failures...)
+}
+
+func (r *run) disposition(data record.TargetDisposition) error {
+	seq, err := r.w.Emit(record.KindTargetDisposition, 0, data)
+	if err != nil {
+		return err
+	}
+	r.lastSeq = seq
+	return r.w.Sync()
 }
 
 // --- one step -------------------------------------------------------------

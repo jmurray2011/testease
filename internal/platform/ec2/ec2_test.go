@@ -76,6 +76,9 @@ func TestEC2DriverCreatesLabelsAndFindsItsInstance(t *testing.T) {
 		t.Errorf("created machine = %+v", machine)
 	}
 	create := strings.Join(cli.calls[0], " ")
+	if !strings.Contains(create, "--count 1") || strings.Contains(create, "--min-count") || strings.Contains(create, "--max-count") {
+		t.Errorf("run-instances count flags are not AWS CLI syntax: %q", create)
+	}
 	for _, want := range []string{"--image-id ami-fictional", "--instance-type t3.small", "--subnet-id subnet-fictional", "--iam-instance-profile Name=fictional-instance-profile", "testease.run", "run-fictional"} {
 		if !strings.Contains(create, want) {
 			t.Errorf("create call %q lacks %q", create, want)

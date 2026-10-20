@@ -40,6 +40,81 @@ func (d Driver) check() error {
 	return nil
 }
 
+// Check verifies the selected registry image, task definition, cluster, and
+// network before RunTask could spend capacity.
+func (d Driver) Check(ctx context.Context, image string, provision map[string]string) error {
+	if err := d.check(); err != nil { return err }
+	for _, key := range []string{"ecs.cluster", "ecs.task_definition", "ecs.subnet_id", "ecs.security_group_id"} {
+		if _, err := required(provision, key); err != nil { return err }
+	}
+	registry, rest, ok := strings.Cut(image, "/")
+	if !ok { return fmt.Errorf("ECS image %q is not a private ECR reference", image) }
+	parts := strings.Split(registry, ".")
+	if len(parts) < 6 || parts[1] != "dkr" || parts[2] != "ecr" || parts[3] != d.Region || parts[4] != "amazonaws" {
+		return fmt.Errorf("ECS image %q is not in selected AWS region %s", image, d.Region)
+	}
+	account := parts[0]
+	repository, imageID := "", ""
+	if before, digest, found := strings.Cut(rest, "@"); found {
+		repository, imageID = before, "imageDigest=" + digest
+	} else if index := strings.LastIndex(rest, ":"); index > 0 {
+		repository, imageID = rest[:index], "imageTag=" + rest[index+1:]
+	}
+	if repository == "" || strings.HasSuffix(imageID, "=") {
+		return fmt.Errorf("ECS image %q needs a repository and tag or digest", image)
+	}
+	out, err := d.CLI.Output(ctx, "sts", "get-caller-identity", "--output", "json")
+	if err != nil { return fmt.Errorf("resolve AWS profile %q: %w", d.Profile, err) }
+	var caller struct { Account string }
+	if err := json.Unmarshal(out, &caller); err != nil || caller.Account != account {
+		return fmt.Errorf("ECR registry account %s differs from selected profile's account", account)
+	}
+	out, err = d.CLI.Output(ctx, "ecr", "describe-images", "--registry-id", account,
+		"--repository-name", repository, "--image-ids", imageID, "--output", "json")
+	if err != nil { return fmt.Errorf("find ECR image %s: %w", image, err) }
+	var images struct { Details []struct {
+		RegistryID string `json:"registryId"`
+		Repository string `json:"repositoryName"`
+		Digest string `json:"imageDigest"`
+		Tags []string `json:"imageTags"`
+	} `json:"imageDetails"` }
+	if err := json.Unmarshal(out, &images); err != nil { return err }
+	found := false
+	for _, item := range images.Details {
+		if item.RegistryID != account || item.Repository != repository { continue }
+		if strings.HasPrefix(imageID, "imageTag=") && slices.Contains(item.Tags, strings.TrimPrefix(imageID, "imageTag=")) ||
+			strings.HasPrefix(imageID, "imageDigest=") && item.Digest == strings.TrimPrefix(imageID, "imageDigest=") {
+			found = true
+		}
+	}
+	if !found { return fmt.Errorf("ECR image %s was not found", image) }
+	cluster := provision["ecs.cluster"]
+	out, err = d.CLI.Output(ctx, "ecs", "describe-clusters", "--clusters", cluster, "--output", "json")
+	if err != nil { return fmt.Errorf("find ECS cluster %s: %w", cluster, err) }
+	var clusters struct { Clusters []struct {
+		Name string `json:"clusterName"`
+		Status string `json:"status"`
+	} `json:"clusters"` }
+	if err := json.Unmarshal(out, &clusters); err != nil { return err }
+	if len(clusters.Clusters) != 1 || clusters.Clusters[0].Status != "ACTIVE" {
+		return fmt.Errorf("ECS cluster %s is not active", cluster)
+	}
+	if _, err := d.describeDefinition(ctx, image, provision); err != nil { return err }
+	for _, item := range []struct{ service, action, flag, key, result, idKey string }{
+		{"ec2", "describe-subnets", "--subnet-ids", "ecs.subnet_id", "Subnets", "SubnetId"},
+		{"ec2", "describe-security-groups", "--group-ids", "ecs.security_group_id", "SecurityGroups", "GroupId"},
+	} {
+		out, err := d.CLI.Output(ctx, item.service, item.action, item.flag, provision[item.key], "--output", "json")
+		if err != nil { return fmt.Errorf("find %s %s: %w", item.key, provision[item.key], err) }
+		var response map[string][]map[string]any
+		if err := json.Unmarshal(out, &response); err != nil { return err }
+		if len(response[item.result]) != 1 || response[item.result][0][item.idKey] != provision[item.key] {
+			return fmt.Errorf("%s %s was not found", item.key, provision[item.key])
+		}
+	}
+	return nil
+}
+
 func required(provision map[string]string, key string) (string, error) {
 	value := provision[key]
 	if value == "" { return "", fmt.Errorf("ECS requires catalog provision setting %q", key) }

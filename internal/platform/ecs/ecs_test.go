@@ -1,14 +1,37 @@
 package ecs
 
 import (
+	"encoding/base64"
 	"bytes"
 	"context"
+	"fmt"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/jmurray2011/testease/internal/provider/provisioned"
 	"github.com/jmurray2011/testease/internal/target"
 )
+
+func TestFargateArtifactLogFramesStayBounded(t *testing.T) {
+	t.Parallel()
+	artifact := filepath.Join(t.TempDir(), "large.bin")
+	command := wrapper([]byte(fmt.Sprintf("head -c 70000 /dev/zero > %s\n", shellQuote(artifact))), nil, []string{artifact})
+	out, err := exec.Command("sh", "-c", command).Output()
+	if err != nil { t.Fatal(err) }
+	var encoded string
+	frames := 0
+	for _, line := range strings.Split(string(out), "\n") {
+		if !strings.HasPrefix(line, "@@TESTEASE_ARTIFACT:0:") { continue }
+		frames++
+		if len(line) > 33000 { t.Errorf("artifact log frame is %d bytes", len(line)) }
+		encoded += strings.TrimPrefix(line, "@@TESTEASE_ARTIFACT:0:")
+	}
+	decoded, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil { t.Fatal(err) }
+	if frames < 2 || len(decoded) != 70000 { t.Errorf("frames=%d decoded bytes=%d", frames, len(decoded)) }
+}
 
 const fictionalImage = "000000000000.dkr.ecr.us-east-1.amazonaws.com/fictional/probe:1"
 const fictionalTask = "arn:aws:ecs:us-east-1:000000000000:task/fictional-cluster/task-fictional"

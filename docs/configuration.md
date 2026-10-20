@@ -22,8 +22,8 @@ These environment variables set paths and defaults:
     TESTEASE_RUNS_URL        where published records are readable
     TESTEASE_TARGET_CATALOG  target names and tags
     TESTEASE_CAMPAIGN_ROOT   campaign definitions
-    TESTEASE_AWS_PROFILE     AWS profile for Systems Manager hosts
-    TESTEASE_AWS_REGION      AWS region for Systems Manager hosts
+    TESTEASE_AWS_PROFILE     AWS profile for SSM, EC2 and ECS hosts
+    TESTEASE_AWS_REGION      AWS region for SSM, EC2 and ECS hosts
     TESTEASE_SSM_TRANSFER_STORE temporary store for large SSM media
     TESTEASE_WINRM_USER      user for hosts dialled over WinRM
     TESTEASE_WINRM_PASSWORD_FILE password file for WinRM hosts

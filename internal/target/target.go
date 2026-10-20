@@ -35,10 +35,10 @@ type Identity struct {
 type Target interface {
 	Identity() Identity
 
-	// Labels carry ownership on every target testease created: which runner,
-	// which run, which pid, when, which backend. Forensic cleanup answers
-	// "can I safely remove this" from the label alone, never from "it looks
-	// old", so reap trusts these and nothing else.
+	// Labels carry ownership on every target Testease created: which runner,
+	// which run, which pid, when, and which backend. Remote cleanup also
+	// requires a matching resource ID and release intent in the run record;
+	// age alone never authorizes removal.
 	Labels() map[string]string
 }
 
@@ -120,9 +120,9 @@ type Spec struct {
 	Ready []string
 }
 
-// Provider is how a target comes to exist. testease consumes targets; it does
-// not provision them, and this interface is the permanent boundary - a
-// provisioning platform belongs on the far side of it.
+// Provider is the boundary through which the runner obtains and releases a
+// target. A provider may locate an existing machine or create one through a
+// platform driver; the runner consumes the resulting Target either way.
 type Provider interface {
 	// Resolve may create a target (docker) or merely locate one (static,
 	// statefile).

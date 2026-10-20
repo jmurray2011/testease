@@ -23,7 +23,8 @@ func reapCmd() *cobra.Command {
 		Use:   "reap",
 		Short: "find targets left by failed runs",
 		Long: "A failed run may leave targets running for inspection. This command lists\n" +
-			"targets that can be removed after the process that created them has exited.\n\n" +
+			"targets with enough ownership proof to remove. Docker uses local process\n" +
+			"identity; EC2 and ECS require a matching release intent in the run record.\n\n" +
 			"It does not use age as a removal rule.",
 		Args: cobra.NoArgs,
 		RunE: doReap,
@@ -184,11 +185,11 @@ func doPlatformReap(cmd *cobra.Command, platform string) error {
 		return err
 	}
 	if binding.Profile == "" || binding.Region == "" {
-		return fmt.Errorf("EC2 reap requires --aws-profile and --aws-region")
+		return fmt.Errorf("%s reap requires --aws-profile and --aws-region", platform)
 	}
 	runner := flagString(cmd, "runner")
 	if runner == "" {
-		return fmt.Errorf("EC2 reap requires --runner")
+		return fmt.Errorf("%s reap requires --runner", platform)
 	}
 	log, err := logger(cmd)
 	if err != nil {

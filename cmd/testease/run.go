@@ -51,8 +51,8 @@ func runCmd() *cobra.Command {
 	cmd.Flags().String("store", envOr("TESTEASE_STORE", ""),
 		"artifact store that @store: axes are discovered from")
 	cmd.Flags().String("aws-profile", os.Getenv("TESTEASE_AWS_PROFILE"),
-		"aws profile for hosts dialled over Systems Manager; there is no default")
-	cmd.Flags().String("aws-region", os.Getenv("TESTEASE_AWS_REGION"), "aws region for those hosts")
+		"AWS profile for SSM, EC2 and ECS hosts; there is no default")
+	cmd.Flags().String("aws-region", os.Getenv("TESTEASE_AWS_REGION"), "AWS region for SSM, EC2 and ECS hosts")
 	cmd.Flags().String("ssm-transfer-store", os.Getenv("TESTEASE_SSM_TRANSFER_STORE"),
 		"temporary s3:// bucket or prefix used to stage large media onto SSM hosts")
 	cmd.Flags().String("statefile-dir", envOr("TESTEASE_STATEFILE_DIR", ""),

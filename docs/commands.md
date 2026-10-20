@@ -46,7 +46,7 @@ the main README for the record layout.
     follow     show campaign progress.
     package    write an archive of campaign records.
     publish    copy cited run records to a shared directory.
-    reap       remove targets whose run is provably over.
+    reap       list targets and remove only those with enough release proof.
     import     read a run.tsv written before testease into a record.
     targets    the targets standing right now, and how to get onto them.
 

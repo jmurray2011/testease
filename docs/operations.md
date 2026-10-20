@@ -31,6 +31,78 @@ is named; Testease never silently chooses the first machine. The selected name,
 full tag set, selector, and catalog SHA-256 are recorded. Tags describe intended
 capability, while probes still measure what the target actually is.
 
+## Provisioning EC2 and ECS targets
+
+A scenario selects a provider and image. Keep the scenario independent of the
+AWS account by putting launch settings in the selected target catalog's
+`provision` map. The `params` map remains for declared scenario parameters.
+Catalog entries may contain an AWS profile *name*, region, and resource IDs;
+keep credentials outside the catalog.
+
+An EC2 host uses `provider: ec2`, `backend: ssm`, and an AMI ID as its `image`.
+The catalog entry for that host needs `ec2.instance_type`, `ec2.subnet_id`, and
+`ec2.instance_profile`. `ec2.security_group_id` is optional. The AMI needs an
+SSM agent and an instance profile that permits Systems Manager. Testease
+records the instance ID and AMI, waits for SSM registration, then opens the
+ordinary SSM session for probes and media. `boot_timeout` can raise the
+three-minute registration budget. Each matrix cell gets its own instance;
+`--par` controls how many can run at once.
+
+An ECS host uses `provider: ecs` and an ECR image reference as its `image`.
+Its catalog entry needs `ecs.cluster`, `ecs.task_definition`,
+`ecs.subnet_id`, and `ecs.security_group_id`. Set `ecs.assign_public_ip` to `enabled` only when
+the subnet needs it. Register the Fargate task definition
+before running: it must name exactly one container with the same ECR image,
+`awsvpc` networking, a `/bin/sh -c` entry point, and `awslogs` with a log
+group and stream prefix. Each probe launches one task; the record captures its
+task ARN, exit code, logs, facts, and declared fetched artifacts. This
+one-shot target has no persistent session or carry surface, and the task
+definition remains operator managed.
+
+For example, a private catalog entry can bind non-secret launch settings:
+
+```yaml
+schema: 1
+targets:
+  - name: aws-ec2-fixture
+    tags: [os:linux, lifecycle:ephemeral]
+    provision:
+      aws.profile: operator-profile
+      aws.region: us-east-1
+      ec2.instance_type: t3.small
+      ec2.subnet_id: subnet-example
+      ec2.instance_profile: ssm-instance-profile
+```
+
+```text
+testease doctor my-scenario --strict --target aws-ec2-fixture \
+  --target-catalog targets.yaml
+testease run my-scenario --target aws-ec2-fixture \
+  --target-catalog targets.yaml
+```
+
+The selected AWS profile and region also apply to SSM. When flags and catalog
+settings both name them, they must agree. A failed run retains its target for
+inspection by default; `--release-failed-targets` opts into removal. `--keep`
+retains targets after a clean run. Review the record's target identity and
+disposition before manual cleanup.
+
+`testease reap --platform ec2` and `testease reap --platform ecs` list native
+resources belonging to the selected runner. Supply `--aws-profile` and
+`--aws-region` (or their `TESTEASE_AWS_*` defaults); `--runner` defaults to the
+local runner identity, and ECS also needs `--ecs-cluster`. Pass `--runs-dir` pointing at the original records. The
+command only offers a remote target for removal when its native labels match
+the run record's resource ID, run, host, cell, and durable release intent.
+`--force` performs those proved removals. A retained target is never aged out
+implicitly.
+
+```text
+testease reap --platform ec2 --aws-profile operator-profile \
+  --aws-region us-east-1 --runner operator@workstation --runs-dir runs
+testease reap --platform ec2 --aws-profile operator-profile \
+  --aws-region us-east-1 --runner operator@workstation --runs-dir runs --force
+```
+
 ## Campaigns
 
 A campaign groups related runs and records their setup, parameters, cleanup, and

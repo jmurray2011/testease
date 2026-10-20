@@ -148,7 +148,8 @@ testease run ecs-artifact --scenario-root testdata/cloud-smoke \
   --runs-dir "$RUNS_DIR" --release-failed-targets
 ```
 
-Each run writes an `expect@3` verdict and the fetched file under its record's
+After each run, pass the printed record directory to `testease judge`. The
+judge writes an `expect@3` verdict; the fetched file is under the record's
 `artifacts/` directory. The ECS file should contain 70,000 zero bytes with
 SHA-256 `f51b279903037b37ea1828a1021499995718d38016cad6c0da30962a41be052f`.
 The EC2 artifact contains the staged payload's SHA-256. Keep account IDs,

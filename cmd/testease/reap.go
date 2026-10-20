@@ -12,6 +12,8 @@ import (
 	"github.com/spf13/cobra"
 
 	backend "github.com/jmurray2011/testease/internal/backend/docker"
+	ssmbackend "github.com/jmurray2011/testease/internal/backend/ssm"
+	"github.com/jmurray2011/testease/internal/platform/ec2"
 	"github.com/jmurray2011/testease/internal/reap"
 )
 
@@ -29,6 +31,10 @@ func reapCmd() *cobra.Command {
 	cmd.Flags().Bool("all-users", false, "widen to every user on this machine; it cannot widen to other machines")
 	cmd.Flags().StringArray("docker-contexts", nil, "docker contexts to look in (repeatable); the current one by default")
 	cmd.Flags().Bool("all-contexts", false, "look in every docker context configured here")
+	cmd.Flags().String("platform", "docker", "target platform to reap: docker or ec2")
+	cmd.Flags().String("runner", runnerName(), "owner label of provisioned targets to inspect")
+	cmd.Flags().String("aws-profile", os.Getenv("TESTEASE_AWS_PROFILE"), "AWS profile for platform reap")
+	cmd.Flags().String("aws-region", os.Getenv("TESTEASE_AWS_REGION"), "AWS region for platform reap")
 	cmd.Flags().StringP("output", "o", "text", "text or json")
 	return cmd
 }
@@ -57,6 +63,9 @@ type reapTarget struct {
 }
 
 func doReap(cmd *cobra.Command, _ []string) error {
+	if platform := flagString(cmd, "platform"); platform != "docker" {
+		return doPlatformReap(cmd, platform)
+	}
 	log, err := logger(cmd)
 	if err != nil {
 		return err
@@ -157,6 +166,36 @@ func doReap(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
+	if flagString(cmd, "output") == "json" {
+		return writeJSON(cmd, report)
+	}
+	writeReap(cmd, report, force)
+	return nil
+}
+
+func doPlatformReap(cmd *cobra.Command, platform string) error {
+	if platform != "ec2" {
+		return fmt.Errorf("no reap driver for platform %q; use docker or ec2", platform)
+	}
+	binding, err := awsBinding(cmd, nil)
+	if err != nil {
+		return err
+	}
+	if binding.Profile == "" || binding.Region == "" {
+		return fmt.Errorf("EC2 reap requires --aws-profile and --aws-region")
+	}
+	runner := flagString(cmd, "runner")
+	if runner == "" {
+		return fmt.Errorf("EC2 reap requires --runner")
+	}
+	log, err := logger(cmd)
+	if err != nil {
+		return err
+	}
+	client := ssmbackend.Client{Profile: binding.Profile, Region: binding.Region, Log: log}
+	force, _ := cmd.Flags().GetBool("force")
+	report := platformReap(cmd.Context(), ec2.Driver{CLI: client, Profile: binding.Profile, Region: binding.Region},
+		platform, flagString(cmd, "runs-dir"), runner, force)
 	if flagString(cmd, "output") == "json" {
 		return writeJSON(cmd, report)
 	}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -10,6 +11,44 @@ import (
 	"github.com/jmurray2011/testease/internal/record"
 	"github.com/jmurray2011/testease/internal/target"
 )
+
+type platformInventory interface {
+	List(context.Context, map[string]string) ([]provisioned.Machine, error)
+	Destroy(context.Context, provisioned.Machine) error
+}
+
+func platformReap(ctx context.Context, inventory platformInventory, platform, runsDir, runner string, force bool) reapReport {
+	report := reapReport{Targets: []reapTarget{}, Removed: []string{}, Notices: []string{}}
+	machines, err := inventory.List(ctx, map[string]string{target.LabelRunner: runner})
+	if err != nil {
+		report.Notices = append(report.Notices, fmt.Sprintf("could not list %s targets: %v", platform, err))
+		return report
+	}
+	for _, machine := range machines {
+		fate, reason := platformFate(runsDir, platform, machine)
+		if machine.Labels[target.LabelRunner] != runner {
+			fate, reason = reap.Unprovable, "resource belongs to a different runner"
+		}
+		report.Targets = append(report.Targets, reapTarget{
+			Kind: platform + "-instance", Fate: string(fate), Where: platform,
+			Name: machine.ID, RunID: machine.Labels[target.LabelRun],
+			Created: machine.Labels[target.LabelCreated], Reason: reason,
+		})
+		if fate != reap.Orphaned {
+			continue
+		}
+		report.Removable++
+		if !force {
+			continue
+		}
+		if err := inventory.Destroy(ctx, machine); err != nil {
+			report.Notices = append(report.Notices, fmt.Sprintf("could not remove %s %s: %v", platform, machine.ID, err))
+			continue
+		}
+		report.Removed = append(report.Removed, machine.ID)
+	}
+	return report
+}
 
 // platformFate requires a matching record before a remote resource can be
 // removed. A local PID cannot prove anything about a different runner host.

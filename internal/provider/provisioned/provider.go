@@ -45,6 +45,13 @@ type Driver interface {
 	Destroy(context.Context, Machine) error
 }
 
+// OneShotDriver runs a command as a new native task. The callback must be
+// invoked with its native ID before waiting for completion.
+type OneShotDriver interface {
+	Driver
+	RunOnce(context.Context, Machine, []byte, []string, target.RunOpts, func(Machine) error) (target.Result, error)
+}
+
 // Options binds one platform driver to a run. Dial is the transport boundary:
 // an EC2 driver creates an instance while the SSM backend opens the session.
 type Options struct {
@@ -89,12 +96,21 @@ func (p *Provider) Resolve(ctx context.Context, spec target.Spec) (target.Target
 	if len(machine.Labels) == 0 {
 		machine.Labels = labels
 	}
-	return &createdTarget{provider: p, spec: spec, machine: machine}, nil
+	created := &createdTarget{provider: p, spec: spec, machine: machine}
+	if driver, ok := p.opt.Driver.(OneShotDriver); ok {
+		return &oneShotTarget{created: created, driver: driver}, nil
+	}
+	return created, nil
 }
 
 func (p *Provider) Release(ctx context.Context, t target.Target, keep bool) error {
-	created, ok := t.(*createdTarget)
-	if !ok {
+	var created *createdTarget
+	switch typed := t.(type) {
+	case *createdTarget:
+		created = typed
+	case *oneShotTarget:
+		created = typed.created
+	default:
 		return fmt.Errorf("%s cannot release a target it did not create", p.opt.Name)
 	}
 	if keep {
@@ -118,14 +134,18 @@ var (
 )
 
 func (t *createdTarget) Identity() target.Identity {
+	return t.identityFor(t.machine)
+}
+
+func (t *createdTarget) identityFor(machine Machine) target.Identity {
 	resolved := map[string]any{
 		"backend": t.provider.opt.Name,
-		"ref":     t.provider.opt.Name + ":" + t.machine.ID,
-		"id":      t.machine.ID,
-		"address": t.machine.Address,
-		"image":   t.machine.Image,
+		"ref":     t.provider.opt.Name + ":" + machine.ID,
+		"id":      machine.ID,
+		"address": machine.Address,
+		"image":   machine.Image,
 	}
-	for key, value := range t.machine.Resolved {
+	for key, value := range machine.Resolved {
 		resolved[key] = value
 	}
 	return target.Identity{
@@ -133,6 +153,31 @@ func (t *createdTarget) Identity() target.Identity {
 		Resolved:  resolved,
 		Facts:     map[string]string{},
 	}
+}
+
+type oneShotTarget struct {
+	created   *createdTarget
+	driver    OneShotDriver
+	onCreated func(target.Identity) error
+}
+
+var (
+	_ target.Target           = (*oneShotTarget)(nil)
+	_ target.OneShotter       = (*oneShotTarget)(nil)
+	_ target.CreationReporter = (*oneShotTarget)(nil)
+)
+
+func (t *oneShotTarget) Identity() target.Identity { return t.created.Identity() }
+func (t *oneShotTarget) Labels() map[string]string { return t.created.Labels() }
+func (t *oneShotTarget) SetOnCreated(callback func(target.Identity) error) { t.onCreated = callback }
+
+func (t *oneShotTarget) RunOnce(ctx context.Context, script []byte, args []string, opt target.RunOpts) (target.Result, error) {
+	return t.driver.RunOnce(ctx, t.created.machine, script, args, opt, func(task Machine) error {
+		if t.onCreated == nil {
+			return fmt.Errorf("one-shot task %s has no creation recorder", task.ID)
+		}
+		return t.onCreated(t.created.identityFor(task))
+	})
 }
 
 func (t *createdTarget) Labels() map[string]string { return maps.Clone(t.machine.Labels) }

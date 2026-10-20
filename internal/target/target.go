@@ -144,6 +144,12 @@ type OneShotter interface {
 	RunOnce(ctx context.Context, script []byte, args []string, opt RunOpts) (Result, error)
 }
 
+// CreationReporter lets a one-shot target durably report the native resource
+// ID as soon as launch returns, before it waits for the command to finish.
+type CreationReporter interface {
+	SetOnCreated(func(Identity) error)
+}
+
 // CarryReceiver is a target that can retain bytes for its next execution
 // without opening a persistent session. One-shot targets use it to accept
 // carried media before their container is created and started.

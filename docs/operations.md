@@ -90,9 +90,10 @@ disposition before manual cleanup.
 `testease reap --platform ec2` and `testease reap --platform ecs` list native
 resources belonging to the selected runner. Supply `--aws-profile` and
 `--aws-region` (or their `TESTEASE_AWS_*` defaults); `--runner` defaults to the
-local runner identity, and ECS also needs `--ecs-cluster`. Pass `--runs-dir` pointing at the original records. The
-command only offers a remote target for removal when its native labels match
-the run record's resource ID, run, host, cell, and durable release intent.
+local runner identity, and ECS also needs `--ecs-cluster`. Pass `--runs-dir`
+pointing at the original records. The command only offers a remote target for
+removal when its native labels match the run record's resource ID, run, host,
+cell, and durable release intent, and no writer still holds that record.
 `--force` performs those proved removals. A retained target is never aged out
 implicitly.
 

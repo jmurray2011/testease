@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 
@@ -9,6 +10,54 @@ import (
 	"github.com/jmurray2011/testease/internal/record"
 	"github.com/jmurray2011/testease/internal/target"
 )
+
+type fakePlatformInventory struct {
+	machines []provisioned.Machine
+	destroyed []string
+}
+
+func (f *fakePlatformInventory) List(context.Context, map[string]string) ([]provisioned.Machine, error) {
+	return f.machines, nil
+}
+func (f *fakePlatformInventory) Destroy(_ context.Context, machine provisioned.Machine) error {
+	f.destroyed = append(f.destroyed, machine.ID)
+	return nil
+}
+
+func TestPlatformReapForcesOnlyProvedRelease(t *testing.T) {
+	t.Parallel()
+	runsDir := t.TempDir()
+	w, err := record.Open(filepath.Join(runsDir, "run-fictional"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = w.Emit(record.KindRunStarted, 0, record.RunStarted{RunID: "run-fictional"})
+	for _, item := range []struct{ host, id, action string }{
+		{"release-box", "i-release", "release-intended"},
+		{"kept-box", "i-kept", "retained"},
+	} {
+		_, _ = w.Emit(record.KindTargetResolved, 0, record.TargetResolved{Host: item.host,
+			Resolved: map[string]any{"ref": "ec2:" + item.id}})
+		_, _ = w.Emit(record.KindTargetDisposition, 0, record.TargetDisposition{
+			Host: item.host, Ref: "ec2:" + item.id, Action: item.action})
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	inventory := &fakePlatformInventory{}
+	for _, item := range []struct{ host, id string }{{"release-box", "i-release"}, {"kept-box", "i-kept"}} {
+		inventory.machines = append(inventory.machines, provisioned.Machine{ID: item.id,
+			Labels: map[string]string{target.LabelRun: "run-fictional", target.LabelHost: item.host,
+				target.LabelRunner: "operator@workstation"}})
+	}
+	report := platformReap(context.Background(), inventory, "ec2", runsDir, "operator@workstation", true)
+	if report.Removable != 1 || len(report.Removed) != 1 || report.Removed[0] != "i-release" {
+		t.Errorf("report = %+v", report)
+	}
+	if len(inventory.destroyed) != 1 || inventory.destroyed[0] != "i-release" {
+		t.Errorf("destroyed = %v", inventory.destroyed)
+	}
+}
 
 func TestPlatformReapRequiresMatchingReleaseIntent(t *testing.T) {
 	t.Parallel()

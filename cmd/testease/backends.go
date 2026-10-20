@@ -47,6 +47,11 @@ func backendKinds() []backendKind {
 			Needs:        "an explicit http(s) origin; DNS and the TLS leaf identity are recorded",
 		},
 		{
+			Provider: "ec2", Dials: "an AMI-launched instance over SSM", Creates: true,
+			Capabilities: []string{"session", "media"},
+			Needs: "an explicit AWS profile and region, plus instance type, subnet and instance profile in target-catalog provision",
+		},
+		{
 			Provider: "hyperv", Dials: "one container per command", Creates: true,
 			Capabilities: []string{"oneshot", "carry"},
 		},

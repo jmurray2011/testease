@@ -312,6 +312,7 @@ func (d Driver) collectLogs(ctx context.Context, group, stream string, opt targe
 			var response struct { Events []struct { Message string `json:"message"` } `json:"events"` }
 			if err := json.Unmarshal(out, &response); err != nil { return err }
 			var stdout bytes.Buffer
+			var facts bytes.Buffer
 			chunks := map[int]string{}
 			done := false
 			for _, event := range response.Events {
@@ -321,7 +322,7 @@ func (d Driver) collectLogs(ctx context.Context, group, stream string, opt targe
 				case strings.HasPrefix(message, "@@TESTEASE_FACTS:"):
 					body, decodeErr := base64.StdEncoding.DecodeString(strings.TrimPrefix(message, "@@TESTEASE_FACTS:"))
 					if decodeErr != nil { return fmt.Errorf("decode task facts: %w", decodeErr) }
-					if opt.Structured != nil { _, _ = opt.Structured.Write(body) }
+					_, _ = facts.Write(body)
 				case strings.HasPrefix(message, "@@TESTEASE_ARTIFACT:"):
 					parts := strings.SplitN(strings.TrimPrefix(message, "@@TESTEASE_ARTIFACT:"), ":", 2)
 					if len(parts) != 2 { return fmt.Errorf("malformed task artifact marker") }
@@ -340,6 +341,7 @@ func (d Driver) collectLogs(ctx context.Context, group, stream string, opt targe
 					result.Fetched[opt.Fetch[index]] = body
 				}
 				if opt.Stdout != nil { _, _ = io.Copy(opt.Stdout, &stdout) }
+				if opt.Structured != nil { _, _ = io.Copy(opt.Structured, &facts) }
 				return nil
 			}
 		}

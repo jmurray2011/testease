@@ -18,6 +18,7 @@ import (
 	backend "github.com/jmurray2011/testease/internal/backend/docker"
 	ssmbackend "github.com/jmurray2011/testease/internal/backend/ssm"
 	"github.com/jmurray2011/testease/internal/doctor"
+	"github.com/jmurray2011/testease/internal/platform/ec2"
 	"github.com/jmurray2011/testease/internal/runner"
 	"github.com/jmurray2011/testease/internal/scenario"
 )
@@ -48,6 +49,8 @@ func doctorCmd() *cobra.Command {
 		"descriptor binding the scenario's named, non-secret inputs to verified files")
 	cmd.Flags().String("ssm-transfer-store", os.Getenv("TESTEASE_SSM_TRANSFER_STORE"),
 		"temporary s3:// bucket or prefix used to stage large media onto SSM hosts")
+	cmd.Flags().String("aws-profile", os.Getenv("TESTEASE_AWS_PROFILE"), "AWS profile for selected provisioned targets")
+	cmd.Flags().String("aws-region", os.Getenv("TESTEASE_AWS_REGION"), "AWS region for selected provisioned targets")
 	cmd.Flags().Bool("strict", false, "count a warning as a failure")
 	cmd.Flags().StringP("output", "o", "text", "text or json")
 	return cmd
@@ -59,9 +62,13 @@ func doDoctor(cmd *cobra.Command, args []string) error {
 		scenarioName = args[0]
 	}
 
-	overrides, _, err := selectedParams(cmd)
+	overrides, selection, err := selectedParams(cmd)
 	if err != nil {
 		return err
+	}
+	binding, err := awsBinding(cmd, selection)
+	if err != nil {
+		return &runner.PreconditionError{Message: err.Error()}
 	}
 	var cells []map[string]string
 	if scenarioName != "" {
@@ -92,6 +99,11 @@ func doDoctor(cmd *cobra.Command, args []string) error {
 	}
 
 	ssmTransferStore := flagString(cmd, "ssm-transfer-store")
+	var provision map[string]string
+	if selection != nil {
+		provision = selection.Profile.Provision
+	}
+	awsClient := ssmbackend.Client{Profile: binding.Profile, Region: binding.Region}
 	report := doctor.Run(cmd.Context(), doctor.Options{
 		RunsDir:               flagString(cmd, "runs-dir"),
 		ScenarioRoot:          flagString(cmd, "scenario-root"),
@@ -107,6 +119,10 @@ func doDoctor(cmd *cobra.Command, args []string) error {
 		OneShotDocker:         windowsDockerFor(cmd),
 		OneShotDockerContext:  windowsDockerContext(cmd),
 		Backends:              capabilityTableFor(cmd),
+		Provision:             provision,
+		Platforms: map[string]doctor.Platform{
+			"ec2": ec2.Driver{CLI: awsClient, Profile: binding.Profile, Region: binding.Region},
+		},
 	})
 
 	if flagString(cmd, "output") == "json" {

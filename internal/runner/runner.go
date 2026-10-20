@@ -65,6 +65,10 @@ type Options struct {
 	// never does.
 	Measurement map[string]string
 
+	// Provision is the selected catalog's non-secret platform configuration.
+	// It is passed to providers without becoming a scenario parameter.
+	Provision map[string]string
+
 	// Inputs are verified, content-addressed external bytes. Their logical
 	// identities are recorded; their staged paths are used only to bind media.
 	Inputs map[string]inputbundle.Resolved
@@ -417,6 +421,7 @@ func (r *run) resolveTargets(ctx context.Context) error {
 			Scheme:      host.Scheme,
 			Probe:       firstProbe(r.plan, name),
 			Media:       r.media(host.Media),
+			Provision:   maps.Clone(r.opt.Provision),
 			Env:         host.Env,
 			BootTimeout: time.Duration(host.BootTimeout),
 			Ready:       host.Ready,

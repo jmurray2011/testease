@@ -87,6 +87,10 @@ type Spec struct {
 	Image string
 	Media []Media
 
+	// Provision is non-secret, platform-specific configuration from the
+	// selected target catalog, separate from scenario template parameters.
+	Provision map[string]string
+
 	// Env is what a created target boots with.
 	Env map[string]string
 

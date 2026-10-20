@@ -1182,6 +1182,47 @@ func TestTargetsAreReleasedAndKeepIsHonoured(t *testing.T) {
 	}
 }
 
+func TestTargetDispositionPrecedesRunFinished(t *testing.T) {
+	t.Parallel()
+	for _, keep := range []bool{false, true} {
+		t.Run(fmt.Sprintf("keep=%v", keep), func(t *testing.T) {
+			t.Parallel()
+			_, rec, err := exec(t, plan(t, oneStep), &fakeSession{run: exits(0, "ok\n")}, runOpts{keep: keep})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var actions []string
+			finished := false
+			for _, event := range rec.Events {
+				if event.Kind == record.KindRunFinished {
+					finished = true
+				}
+				if event.Kind != record.KindTargetDisposition {
+					continue
+				}
+				if finished {
+					t.Error("target disposition was recorded after run-finished")
+				}
+				disposition, decodeErr := record.Decode[record.TargetDisposition](event)
+				if decodeErr != nil {
+					t.Fatal(decodeErr)
+				}
+				if disposition.Host != "box" || disposition.Ref != "container:abc123" {
+					t.Errorf("disposition identity = %+v", disposition)
+				}
+				actions = append(actions, disposition.Action)
+			}
+			want := []string{"release-intended", "released"}
+			if keep {
+				want = []string{"retained"}
+			}
+			if !slices.Equal(actions, want) {
+				t.Errorf("disposition actions = %v, want %v", actions, want)
+			}
+		})
+	}
+}
+
 func TestFailedTargetsAreRetainedUnlessDisposablePolicyReleasesThem(t *testing.T) {
 	t.Parallel()
 

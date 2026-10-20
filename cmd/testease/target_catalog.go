@@ -50,7 +50,8 @@ func selectedParams(cmd *cobra.Command) (map[string]string, *targetcatalog.Selec
 			Remedy:  "testease targets catalog --target-catalog " + path,
 		}
 	}
-	merged := maps.Clone(selection.Profile.Params)
+	merged := make(map[string]string, len(selection.Profile.Params)+len(overrides))
+	maps.Copy(merged, selection.Profile.Params)
 	for key, value := range overrides {
 		merged[key] = value
 	}

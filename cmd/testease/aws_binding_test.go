@@ -68,3 +68,26 @@ targets:
 		t.Errorf("conflicting binding error = %v", err)
 	}
 }
+
+func TestDoctorAcceptsExplicitParamsWithAProvisionOnlyCatalog(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "targets.yaml")
+	if err := os.WriteFile(path, []byte(`schema: 1
+targets:
+  - name: fictional-cloud
+    provision: {aws.profile: fictional-profile, aws.region: us-east-1}
+`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := doctorCmd()
+	if err := cmd.ParseFlags([]string{"--target", "fictional-cloud", "--target-catalog", path, "--param", "image=ami-fictional"}); err != nil {
+		t.Fatal(err)
+	}
+	params, selection, err := selectedParams(cmd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if selection == nil || params["image"] != "ami-fictional" {
+		t.Errorf("selection = %+v, params = %#v", selection, params)
+	}
+}

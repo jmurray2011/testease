@@ -174,6 +174,14 @@ type TargetResolved struct {
 	Facts     map[string]string `json:"facts"`
 }
 
+// TargetCreated pins the native ID of a one-shot task that did not exist when
+// its host was resolved. It is written before waiting for task completion.
+type TargetCreated struct {
+	Host     string         `json:"host"`
+	Ref      string         `json:"ref"`
+	Resolved map[string]any `json:"resolved"`
+}
+
 // TargetDisposition records the runner's decision and the provider's outcome
 // for one target. A release-intended event is durable before destruction starts.
 type TargetDisposition struct {

@@ -37,6 +37,7 @@ const (
 	KindRunStarted     Kind = "run-started"
 	KindInputResolved  Kind = "input-resolved"
 	KindTargetResolved Kind = "target-resolved"
+	KindTargetCreated Kind = "target-created"
 	KindTargetDisposition Kind = "target-disposition"
 	KindMediaStarted   Kind = "media-stage-started"
 	KindMediaStaged    Kind = "media-staged"
@@ -56,6 +57,7 @@ var knownKinds = map[Kind]bool{
 	KindRunStarted:     true,
 	KindInputResolved:  true,
 	KindTargetResolved: true,
+	KindTargetCreated: true,
 	KindTargetDisposition: true,
 	KindMediaStarted:   true,
 	KindMediaStaged:    true,

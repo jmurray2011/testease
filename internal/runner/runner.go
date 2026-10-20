@@ -480,6 +480,25 @@ func (r *run) resolveTargets(ctx context.Context) error {
 		}
 
 		r.targets[name] = t
+		if reporter, ok := t.(target.CreationReporter); ok {
+			reporter.SetOnCreated(func(identity target.Identity) error {
+				ref, _ := identity.Resolved["ref"].(string)
+				if ref == "" {
+					return fmt.Errorf("one-shot host %q created a task without a native ref", name)
+				}
+				seq, err := r.w.Emit(record.KindTargetCreated, 0, record.TargetCreated{
+					Host: name, Ref: ref, Resolved: identity.Resolved,
+				})
+				if err != nil {
+					return err
+				}
+				r.lastSeq = seq
+				if err := r.w.Sync(); err != nil {
+					return err
+				}
+				return r.disposition(record.TargetDisposition{Host: name, Ref: ref, Action: "release-intended"})
+			})
+		}
 		identity := t.Identity()
 		r.emit(record.KindTargetResolved, 0, record.TargetResolved{
 			Host:      name,

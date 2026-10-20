@@ -92,6 +92,14 @@ func platformFate(runsDir, platform string, machine provisioned.Machine) (reap.F
 			if item.Host == host && item.Resolved["ref"] == ref {
 				resolved = true
 			}
+		case record.KindTargetCreated:
+			item, decodeErr := record.Decode[record.TargetCreated](event)
+			if decodeErr != nil {
+				return reap.Unprovable, decodeErr.Error()
+			}
+			if item.Host == host && item.Ref == ref {
+				resolved = true
+			}
 		case record.KindTargetDisposition:
 			item, decodeErr := record.Decode[record.TargetDisposition](event)
 			if decodeErr != nil {

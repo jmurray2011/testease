@@ -103,3 +103,25 @@ targets:
 		t.Error("platform setting leaked into scenario params")
 	}
 }
+
+func TestCatalogAcceptsProvisionOnlyTarget(t *testing.T) {
+	t.Parallel()
+	catalog, err := Load(writeCatalog(t, `
+schema: 1
+targets:
+  - name: fictional-ec2
+    provision:
+      aws.profile: fictional-profile
+      ec2.instance_type: t3.micro
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	selection, err := catalog.Resolve(Selector{Name: "fictional-ec2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(selection.Profile.Params) != 0 || selection.Profile.Provision["ec2.instance_type"] != "t3.micro" {
+		t.Errorf("selection = %+v", selection)
+	}
+}

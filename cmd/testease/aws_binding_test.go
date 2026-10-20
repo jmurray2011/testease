@@ -17,6 +17,18 @@ func TestCloudProvidersRegistersEC2(t *testing.T) {
 	}
 }
 
+func TestDoctorAcceptsExplicitAWSBinding(t *testing.T) {
+	t.Parallel()
+	cmd := doctorCmd()
+	if err := cmd.ParseFlags([]string{"--aws-profile", "fictional-profile", "--aws-region", "us-east-1"}); err != nil {
+		t.Fatal(err)
+	}
+	binding, err := awsBinding(cmd, nil)
+	if err != nil || binding.Profile != "fictional-profile" || binding.Region != "us-east-1" {
+		t.Errorf("binding = %+v, %v", binding, err)
+	}
+}
+
 func TestAWSBindingUsesCatalogAndRefusesAccountDisagreement(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "targets.yaml")

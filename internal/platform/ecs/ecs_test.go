@@ -256,6 +256,26 @@ func TestFargateWrapperCapturesFactsFromFD3(t *testing.T) {
 	}
 }
 
+func TestFargateWrapperHonorsTheProbeShebang(t *testing.T) {
+	t.Parallel()
+	probe := []byte("#!/bin/bash\nset -euo pipefail\nprintf 'fact\\tbash.interpreter\\t/bin/bash\\n' >&3\n")
+	command := wrapper(probe, nil, nil)
+	out, err := exec.Command("sh", "-c", command).CombinedOutput()
+	if err != nil {
+		t.Fatalf("Bash probe failed under Fargate wrapper: %v; output: %s", err, out)
+	}
+	var encoded string
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.HasPrefix(line, "@@TESTEASE_FACTS:") {
+			encoded = strings.TrimPrefix(line, "@@TESTEASE_FACTS:")
+		}
+	}
+	body, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil || string(body) != "fact\tbash.interpreter\t/bin/bash\n" {
+		t.Fatalf("facts = %q, decode error = %v; output: %s", body, err, out)
+	}
+}
+
 func TestFargateArtifactFramesWorkWithTenThousandColumnFoldLimit(t *testing.T) {
 	t.Parallel()
 	bin := t.TempDir()

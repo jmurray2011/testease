@@ -14,7 +14,11 @@ const fictionalImage = "000000000000.dkr.ecr.us-east-1.amazonaws.com/fictional/p
 const fictionalTask = "arn:aws:ecs:us-east-1:000000000000:task/fictional-cluster/task-fictional"
 const fictionalDefinition = "arn:aws:ecs:us-east-1:000000000000:task-definition/fictional:1"
 
-type fakeCLI struct{ calls [][]string }
+type fakeCLI struct{
+	calls [][]string
+	partialLogs bool
+	logCalls int
+}
 func (f *fakeCLI) Output(_ context.Context, args ...string) ([]byte, error) {
 	f.calls = append(f.calls, args)
 	switch args[0] + " " + args[1] {
@@ -25,6 +29,10 @@ func (f *fakeCLI) Output(_ context.Context, args ...string) ([]byte, error) {
 	case "ecs describe-tasks":
 		return []byte(`{"tasks":[{"taskArn":"` + fictionalTask + `","lastStatus":"STOPPED","containers":[{"name":"probe","exitCode":7}]}],"failures":[]}`), nil
 	case "logs get-log-events":
+		f.logCalls++
+		if f.partialLogs && f.logCalls == 1 {
+			return []byte(`{"events":[{"message":"human log"},{"message":"@@TESTEASE_FACTS:ZmFjdAlrZXkJdmFsdWUK"}]}`), nil
+		}
 		return []byte(`{"events":[{"message":"human log"},{"message":"@@TESTEASE_FACTS:ZmFjdAlrZXkJdmFsdWUK"},{"message":"@@TESTEASE_ARTIFACT:0:Ynl0ZXM="},{"message":"@@TESTEASE_DONE"}]}`), nil
 	case "sts get-caller-identity":
 		return []byte(`{"Account":"000000000000"}`), nil
@@ -39,6 +47,23 @@ func (f *fakeCLI) Output(_ context.Context, args ...string) ([]byte, error) {
 	default:
 		return []byte(`{}`), nil
 	}
+}
+
+func TestFargateFactsAreEmittedOnceWhenLogsArriveLate(t *testing.T) {
+	t.Parallel()
+	cli := &fakeCLI{partialLogs: true}
+	driver := Driver{CLI: cli, Profile: "fictional-profile", Region: "us-east-1"}
+	machine, err := driver.Create(context.Background(), provisioned.Request{
+		Image: fictionalImage,
+		Provision: map[string]string{"ecs.cluster": "fictional-cluster", "ecs.task_definition": fictionalDefinition,
+			"ecs.subnet_id": "subnet-fictional", "ecs.security_group_id": "sg-fictional"},
+	})
+	if err != nil { t.Fatal(err) }
+	var structured bytes.Buffer
+	_, err = driver.RunOnce(context.Background(), machine, []byte("true\n"), nil,
+		target.RunOpts{Structured: &structured, Fetch: []string{"/tmp/result.bin"}}, func(provisioned.Machine) error { return nil })
+	if err != nil { t.Fatal(err) }
+	if structured.String() != "fact\tkey\tvalue\n" { t.Errorf("facts duplicated during log poll: %q", structured.String()) }
 }
 
 func TestFargateDoctorChecksECRAndLaunchInputs(t *testing.T) {

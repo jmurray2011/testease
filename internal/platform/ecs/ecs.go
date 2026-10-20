@@ -270,8 +270,8 @@ func wrapper(script []byte, args, fetch []string) string {
 	for _, arg := range args { b.WriteByte(' '); b.WriteString(shellQuote(arg)) }
 	b.WriteString("\nrc=$?\nif [ -f \"$facts\" ]; then printf '@@TESTEASE_FACTS:%s\\n' \"$(base64 \"$facts\" | tr -d '\\n')\"; fi\n")
 	for i, item := range fetch {
-		fmt.Fprintf(&b, "if [ -f %s ]; then printf '@@TESTEASE_ARTIFACT:%d:%%s\\n' \"$(base64 %s | tr -d '\\n')\"; fi\n",
-			shellQuote(item), i, shellQuote(item))
+		fmt.Fprintf(&b, "if [ -f %s ]; then base64 %s | tr -d '\\n' | fold -w 32000 | while IFS= read -r chunk || [ -n \"$chunk\" ]; do printf '@@TESTEASE_ARTIFACT:%d:%%s\\n' \"$chunk\"; done; fi\n",
+			shellQuote(item), shellQuote(item), i)
 	}
 	b.WriteString("echo '@@TESTEASE_DONE'\nexit \"$rc\"\n")
 	return b.String()

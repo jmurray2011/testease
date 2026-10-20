@@ -235,3 +235,22 @@ func TestFargateListBatchesTaskDescriptions(t *testing.T) {
 		t.Errorf("machines=%d describe batches=%v", len(machines), cli.batches)
 	}
 }
+
+func TestFargateWrapperCapturesFactsFromFD3(t *testing.T) {
+	t.Parallel()
+	command := wrapper([]byte("printf 'fact\\tos.kernel\\tlinux\\n' >&3\n"), nil, nil)
+	out, err := exec.Command("sh", "-c", command).CombinedOutput()
+	if err != nil {
+		t.Fatalf("wrapper failed: %v; output: %s", err, out)
+	}
+	var encoded string
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.HasPrefix(line, "@@TESTEASE_FACTS:") {
+			encoded = strings.TrimPrefix(line, "@@TESTEASE_FACTS:")
+		}
+	}
+	body, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil || string(body) != "fact\tos.kernel\tlinux\n" {
+		t.Fatalf("facts = %q, decode error = %v; output: %s", body, err, out)
+	}
+}

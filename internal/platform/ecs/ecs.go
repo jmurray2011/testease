@@ -345,6 +345,7 @@ func wrapper(script []byte, args, fetch []string) string {
 		b.WriteByte(' ')
 		b.WriteString(shellQuote(arg))
 	}
+	b.WriteString(" 3>>\"$facts\"")
 	b.WriteString("\nrc=$?\nif [ -f \"$facts\" ]; then printf '@@TESTEASE_FACTS:%s\\n' \"$(base64 \"$facts\" | tr -d '\\n')\"; fi\n")
 	for i, item := range fetch {
 		fmt.Fprintf(&b, "if [ -f %s ]; then base64 %s | tr -d '\\n' | fold -w 32000 | while IFS= read -r chunk || [ -n \"$chunk\" ]; do printf '@@TESTEASE_ARTIFACT:%d:%%s\\n' \"$chunk\"; done; fi\n",

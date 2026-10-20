@@ -57,6 +57,34 @@ type fakePlatform struct {
 	destroyed string
 }
 
+type fakeOneShotPlatform struct{ fakePlatform }
+
+func (f *fakeOneShotPlatform) RunOnce(_ context.Context, _ Machine, _ []byte, _ []string,
+	_ target.RunOpts, created func(Machine) error) (target.Result, error) {
+	if err := created(Machine{ID: "task-fictional", Image: "ecr-fictional", Labels: f.created.Labels}); err != nil {
+		return target.Result{RC: -1}, err
+	}
+	return target.Result{RC: 0}, nil
+}
+
+func TestOneShotPlatformReportsCreatedTaskBeforeReturning(t *testing.T) {
+	t.Parallel()
+	driver := &fakeOneShotPlatform{}
+	p := New(Options{Driver: driver, Name: "ecs", RunID: "run", Runner: "user@host"})
+	tgt, err := p.Resolve(context.Background(), target.Spec{Host: "box", Image: "ecr-fictional"})
+	if err != nil { t.Fatal(err) }
+	if _, ok := tgt.(target.Sessioner); ok { t.Fatal("one-shot target advertised a session") }
+	shot, ok := tgt.(target.OneShotter)
+	if !ok { t.Fatal("one-shot target does not offer RunOnce") }
+	var ref string
+	tgt.(target.CreationReporter).SetOnCreated(func(id target.Identity) error {
+		ref, _ = id.Resolved["ref"].(string)
+		return nil
+	})
+	if _, err := shot.RunOnce(context.Background(), []byte("true\n"), nil, target.RunOpts{}); err != nil { t.Fatal(err) }
+	if ref != "ecs:task-fictional" { t.Errorf("created task ref = %q", ref) }
+}
+
 func (f *fakePlatform) Create(_ context.Context, req Request) (Machine, error) {
 	f.created = req
 	return Machine{ID: "machine-fictional", Address: "machine-fictional", Image: req.Image, Labels: req.Labels}, nil

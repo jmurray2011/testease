@@ -229,3 +229,55 @@ func TestAnArtifactThatCannotBeReachedIsSaidNotCrashed(t *testing.T) {
 		t.Fatal("the record says nothing about the artifact it could not keep")
 	}
 }
+
+func TestARequiredArtifactThatCannotBeReachedLeavesTheStepUnmeasured(t *testing.T) {
+	t.Parallel()
+
+	manifest := strings.Replace(oneShotArtifact, "when: always}", "when: always, required: true}", 1)
+	tgt := &shotTarget{run: func(_ []byte, _ []string, opt target.RunOpts) (target.Result, error) {
+		_, _ = io.WriteString(opt.Stdout, "done\n")
+		return target.Result{RC: 0}, nil
+	}}
+
+	out, err := runner.Run(context.Background(), runner.Options{
+		Plan:      plan(t, manifest),
+		RunsDir:   t.TempDir(),
+		Tool:      record.ToolRef{Version: "0.0.0-test"},
+		Providers: map[string]target.Provider{"fake": &shotProvider{target: tgt}},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if out.Status != record.StatusInfraFail || out.Measured != 0 {
+		t.Errorf("outcome = %+v, want infra-fail with no measured steps", out)
+	}
+	rec, err := record.Read(out.Dir)
+	if err != nil {
+		t.Fatalf("read record: %v", err)
+	}
+	op := only[record.Operation](t, rec, record.KindOperation)
+	if op.Status != record.StatusInfraFail || op.RC != 0 {
+		t.Errorf("operation = %+v, want infra-fail with the probe's rc 0", op)
+	}
+}
+
+func TestARequiredArtifactThatWasKeptLeavesTheStepMeasured(t *testing.T) {
+	t.Parallel()
+
+	manifest := strings.Replace(oneShotArtifact, "when: always}", "when: always, required: true}", 1)
+	tgt := &shotTarget{run: func(_ []byte, _ []string, opt target.RunOpts) (target.Result, error) {
+		return target.Result{RC: 0, Fetched: map[string][]byte{opt.Fetch[0]: []byte("kept")}}, nil
+	}}
+	out, err := runner.Run(context.Background(), runner.Options{
+		Plan:      plan(t, manifest),
+		RunsDir:   t.TempDir(),
+		Tool:      record.ToolRef{Version: "0.0.0-test"},
+		Providers: map[string]target.Provider{"fake": &shotProvider{target: tgt}},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if out.Status != record.StatusMeasured || out.Measured != 1 {
+		t.Errorf("outcome = %+v, want one measured step", out)
+	}
+}

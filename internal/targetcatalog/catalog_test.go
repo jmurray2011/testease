@@ -75,3 +75,31 @@ func TestCatalogIsStrictAndNamesAreUnique(t *testing.T) {
 		}
 	}
 }
+
+func TestProvisionSettingsStaySeparateFromScenarioParams(t *testing.T) {
+	t.Parallel()
+	catalog, err := Load(writeCatalog(t, `
+schema: 1
+targets:
+  - name: fictional-ec2
+    params: {provider: ec2, image: ami-fictional}
+    provision:
+      aws.profile: fictional-profile
+      aws.region: us-east-1
+      ec2.instance_type: t3.small
+      ec2.subnet_id: subnet-fictional
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	selection, err := catalog.Resolve(Selector{Name: "fictional-ec2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := selection.Profile.Provision["ec2.instance_type"]; got != "t3.small" {
+		t.Errorf("provisioned instance type = %q", got)
+	}
+	if _, ok := selection.Profile.Params["ec2.instance_type"]; ok {
+		t.Error("platform setting leaked into scenario params")
+	}
+}

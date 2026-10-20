@@ -131,7 +131,7 @@ func TestPlatformReapDoesNotRemoveTaskWhileRecordWriterIsActive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer writer.Close()
+	t.Cleanup(func() { _ = writer.Close() })
 	_, _ = writer.Emit(record.KindRunStarted, 0, record.RunStarted{RunID: "run-fictional"})
 	_, _ = writer.Emit(record.KindTargetCreated, 0, record.TargetCreated{Host: "box", Ref: "ecs:task-fictional"})
 	_, _ = writer.Emit(record.KindTargetDisposition, 0, record.TargetDisposition{

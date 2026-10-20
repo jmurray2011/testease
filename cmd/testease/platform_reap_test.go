@@ -59,6 +59,18 @@ func TestPlatformReapForcesOnlyProvedRelease(t *testing.T) {
 	}
 }
 
+func TestReapAcceptsAnExplicitECSCluster(t *testing.T) {
+	t.Parallel()
+	cmd := reapCmd()
+	if err := cmd.ParseFlags([]string{"--platform", "ecs", "--ecs-cluster", "fictional-cluster",
+		"--aws-profile", "fictional-profile", "--aws-region", "us-east-1"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := flagString(cmd, "ecs-cluster"); got != "fictional-cluster" {
+		t.Errorf("ECS cluster = %q", got)
+	}
+}
+
 func TestPlatformReapRequiresMatchingReleaseIntent(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {

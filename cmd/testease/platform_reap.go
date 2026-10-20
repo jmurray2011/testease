@@ -29,8 +29,10 @@ func platformReap(ctx context.Context, inventory platformInventory, platform, ru
 		if machine.Labels[target.LabelRunner] != runner {
 			fate, reason = reap.Unprovable, "resource belongs to a different runner"
 		}
+		kind := platform + "-instance"
+		if platform == "ecs" { kind = "ecs-task" }
 		report.Targets = append(report.Targets, reapTarget{
-			Kind: platform + "-instance", Fate: string(fate), Where: platform,
+			Kind: kind, Fate: string(fate), Where: platform,
 			Name: machine.ID, RunID: machine.Labels[target.LabelRun],
 			Created: machine.Labels[target.LabelCreated], Reason: reason,
 		})

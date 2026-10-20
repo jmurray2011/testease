@@ -123,3 +123,34 @@ func TestPlatformReapRequiresMatchingReleaseIntent(t *testing.T) {
 		})
 	}
 }
+
+func TestPlatformReapDoesNotRemoveTaskWhileRecordWriterIsActive(t *testing.T) {
+	t.Parallel()
+	runsDir := t.TempDir()
+	writer, err := record.Open(filepath.Join(runsDir, "run-fictional"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer writer.Close()
+	_, _ = writer.Emit(record.KindRunStarted, 0, record.RunStarted{RunID: "run-fictional"})
+	_, _ = writer.Emit(record.KindTargetCreated, 0, record.TargetCreated{Host: "box", Ref: "ecs:task-fictional"})
+	_, _ = writer.Emit(record.KindTargetDisposition, 0, record.TargetDisposition{
+		Host: "box", Ref: "ecs:task-fictional", Action: "release-intended",
+	})
+	if err := writer.Sync(); err != nil {
+		t.Fatal(err)
+	}
+	machine := provisioned.Machine{ID: "task-fictional", Labels: map[string]string{
+		target.LabelRun: "run-fictional", target.LabelHost: "box",
+		target.LabelRunner: "operator@workstation",
+	}}
+	if got, _ := platformFate(runsDir, "ecs", machine); got != reap.Live {
+		t.Errorf("active run fate = %s, want live", got)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := platformFate(runsDir, "ecs", machine); got != reap.Orphaned {
+		t.Errorf("closed run fate = %s, want orphaned", got)
+	}
+}

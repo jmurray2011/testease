@@ -26,8 +26,34 @@ func (f *fakeCLI) Output(_ context.Context, args ...string) ([]byte, error) {
 		return []byte(`{"tasks":[{"taskArn":"` + fictionalTask + `","lastStatus":"STOPPED","containers":[{"name":"probe","exitCode":7}]}],"failures":[]}`), nil
 	case "logs get-log-events":
 		return []byte(`{"events":[{"message":"human log"},{"message":"@@TESTEASE_FACTS:ZmFjdAlrZXkJdmFsdWUK"},{"message":"@@TESTEASE_ARTIFACT:0:Ynl0ZXM="},{"message":"@@TESTEASE_DONE"}]}`), nil
+	case "sts get-caller-identity":
+		return []byte(`{"Account":"000000000000"}`), nil
+	case "ecr describe-images":
+		return []byte(`{"imageDetails":[{"registryId":"000000000000","repositoryName":"fictional/probe","imageTags":["1"]}]}`), nil
+	case "ecs describe-clusters":
+		return []byte(`{"clusters":[{"clusterName":"fictional-cluster","status":"ACTIVE"}],"failures":[]}`), nil
+	case "ec2 describe-subnets":
+		return []byte(`{"Subnets":[{"SubnetId":"subnet-fictional"}]}`), nil
+	case "ec2 describe-security-groups":
+		return []byte(`{"SecurityGroups":[{"GroupId":"sg-fictional"}]}`), nil
 	default:
 		return []byte(`{}`), nil
+	}
+}
+
+func TestFargateDoctorChecksECRAndLaunchInputs(t *testing.T) {
+	t.Parallel()
+	cli := &fakeCLI{}
+	driver := Driver{CLI: cli, Profile: "fictional-profile", Region: "us-east-1"}
+	err := driver.Check(context.Background(), fictionalImage, map[string]string{
+		"ecs.cluster": "fictional-cluster", "ecs.task_definition": fictionalDefinition,
+		"ecs.subnet_id": "subnet-fictional", "ecs.security_group_id": "sg-fictional",
+	})
+	if err != nil { t.Fatal(err) }
+	var calls string
+	for _, call := range cli.calls { calls += strings.Join(call, " ") + "\n" }
+	for _, want := range []string{"sts get-caller-identity", "ecr describe-images", "ecs describe-clusters", "ecs describe-task-definition", "ec2 describe-subnets", "ec2 describe-security-groups"} {
+		if !strings.Contains(calls, want) { t.Errorf("doctor did not check %s: %s", want, calls) }
 	}
 }
 

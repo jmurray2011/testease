@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -252,5 +253,33 @@ func TestFargateWrapperCapturesFactsFromFD3(t *testing.T) {
 	body, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil || string(body) != "fact\tos.kernel\tlinux\n" {
 		t.Fatalf("facts = %q, decode error = %v; output: %s", body, err, out)
+	}
+}
+
+func TestFargateArtifactFramesWorkWithTenThousandColumnFoldLimit(t *testing.T) {
+	t.Parallel()
+	bin := t.TempDir()
+	fold := filepath.Join(bin, "fold")
+	tool := "#!/bin/sh\nif [ \"$1\" = -w ] && [ \"$2\" -gt 10000 ]; then echo 'fold: width exceeds target limit' >&2; exit 2; fi\nexec /usr/bin/fold \"$@\"\n"
+	if err := os.WriteFile(fold, []byte(tool), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	artifact := filepath.Join(t.TempDir(), "large.bin")
+	command := wrapper([]byte(fmt.Sprintf("head -c 70000 /dev/zero > %s\n", shellQuote(artifact))), nil, []string{artifact})
+	cmd := exec.Command("sh", "-c", command)
+	cmd.Env = append(os.Environ(), "PATH="+bin+":"+os.Getenv("PATH"))
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("wrapper failed: %v; output: %s", err, out)
+	}
+	var encoded string
+	for _, line := range strings.Split(string(out), "\n") {
+		if strings.HasPrefix(line, "@@TESTEASE_ARTIFACT:0:") {
+			encoded += strings.TrimPrefix(line, "@@TESTEASE_ARTIFACT:0:")
+		}
+	}
+	body, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil || len(body) != 70000 {
+		t.Fatalf("artifact bytes = %d, decode error = %v; output: %s", len(body), err, out)
 	}
 }

@@ -8,12 +8,15 @@ import (
 	"testing"
 )
 
-func TestCloudProvidersRegistersEC2(t *testing.T) {
+func TestCloudProvidersRegistersEC2AndECS(t *testing.T) {
 	t.Parallel()
 	providers := cloudProviders(awsAccountBinding{Profile: "fictional-profile", Region: "us-east-1"},
 		"run-fictional", "operator@workstation", "", slog.Default())
 	if providers["ec2"] == nil {
 		t.Fatal("EC2 was not registered as a target provider")
+	}
+	if providers["ecs"] == nil {
+		t.Fatal("ECS was not registered as a target provider")
 	}
 }
 

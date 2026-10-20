@@ -33,6 +33,19 @@ func TestEC2AdvertisesItsSessionAndMediaCapabilities(t *testing.T) {
 	t.Fatal("EC2 is absent from the backend contract")
 }
 
+func TestECSAdvertisesOneShotOnly(t *testing.T) {
+	t.Parallel()
+	for _, kind := range backendKinds() {
+		if kind.Provider == "ecs" {
+			if !kind.Creates || !slices.Equal(kind.Capabilities, []string{"oneshot"}) {
+				t.Errorf("ECS capability declaration = %+v", kind)
+			}
+			return
+		}
+	}
+	t.Fatal("ECS is absent from the backend contract")
+}
+
 func TestDoctorAcceptsTheInstrumentThatMakesDockerFingerprintable(t *testing.T) {
 	t.Parallel()
 

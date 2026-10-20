@@ -134,3 +134,23 @@ looked but could not take that reading. The judge will not treat it as a
 passing value.
 
 Small starting points are in [`examples/templates`](../examples/templates/).
+
+## Required artifacts
+
+An artifact is optional by default: if Testease cannot collect it, the record
+contains a warning and the step can still be measured. Set `required: true`
+when the file is part of the evidence needed to call the step measured:
+
+```yaml
+artifacts:
+  - step: run the installer
+    from: /testease/install.log
+    as: install.log
+    when: always
+    required: true
+```
+
+If collection or saving fails, the operation and run report `infra-fail` while
+retaining the probe's exit code. The record names the artifact and the collection
+error. `when: fail` attempts collection only when the probe fails; `required`
+applies when that attempt is due. An expect judge cannot pass an unmeasured step.

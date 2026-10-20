@@ -325,10 +325,11 @@ type JudgeRef struct {
 
 // Artifact is a file worth keeping out of a step.
 type Artifact struct {
-	Step string `yaml:"step"`
-	From string `yaml:"from"`
-	As   string `yaml:"as"`
-	When string `yaml:"when"`
+	Step     string `yaml:"step"`
+	From     string `yaml:"from"`
+	As       string `yaml:"as"`
+	When     string `yaml:"when"`
+	Required bool   `yaml:"required"`
 }
 
 // Duration is a yaml duration written the way a person writes one: 300s, 10m.

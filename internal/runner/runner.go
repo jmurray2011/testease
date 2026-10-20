@@ -892,7 +892,6 @@ func (r *run) step(ctx context.Context, seq int, step scenario.Step) error {
 	for _, f := range facts {
 		r.emit(record.KindFact, seq, f)
 	}
-
 	status := record.StatusMeasured
 	rc := result.RC
 	switch {
@@ -911,6 +910,11 @@ func (r *run) step(ctx context.Context, seq int, step scenario.Step) error {
 		log.Warn("step did not report", "error", runErr)
 	case result.TimedOut:
 		status = record.StatusProbeFail
+	}
+	artifactWarnings, missingRequired := r.collect(ctx, session, step, rc, result.Fetched)
+	warnings = append(warnings, artifactWarnings...)
+	if missingRequired && status == record.StatusMeasured {
+		status = record.StatusInfraFail
 	}
 
 	if claim.Text == "" && claim.Extractor == "" {
@@ -933,7 +937,6 @@ func (r *run) step(ctx context.Context, seq int, step scenario.Step) error {
 
 	fingerprint := r.fingerprint(ctx, seq, step, before, printer, snapErr)
 	r.checkControl(seq, step, rc, fingerprint, facts)
-	r.collect(ctx, session, step, seq, rc, result.Fetched)
 	r.dropWorkspace()
 
 	if err := r.w.Sync(); err != nil {
@@ -1109,7 +1112,9 @@ func (r *run) wanted(step scenario.Step) []string {
 // cell handed its files back while it still existed, and a drive step left them
 // in the workspace on this machine - fetching those through the target's
 // session would read the wrong box entirely.
-func (r *run) collect(ctx context.Context, session target.Session, step scenario.Step, seq, rc int, fetched map[string][]byte) {
+func (r *run) collect(ctx context.Context, session target.Session, step scenario.Step, rc int, fetched map[string][]byte) ([]record.Warning, bool) {
+	var warnings []record.Warning
+	var missingRequired bool
 	for _, a := range r.plan.Artifacts {
 		if a.Step != step.Label {
 			continue
@@ -1121,11 +1126,12 @@ func (r *run) collect(ctx context.Context, session target.Session, step scenario
 		body, err := r.artifact(ctx, session, step, a, fetched)
 		if err != nil {
 			r.opt.Log.Warn("could not keep artifact", "artifact", a.As, "step", step.Label, "error", err)
-			r.warn(r.lastSeq, seq, []record.Warning{{
+			warnings = append(warnings, record.Warning{
 				About:    "artifact " + a.As,
 				Message:  err.Error(),
 				Recorded: "nothing",
-			}})
+			})
+			missingRequired = missingRequired || a.Required
 			continue
 		}
 		if err := r.keep(a, body); err != nil {
@@ -1133,13 +1139,15 @@ func (r *run) collect(ctx context.Context, session target.Session, step scenario
 			// A collision is the record's business, not just the log's: what a
 			// finding cites by that name is the earlier attempt's bytes, and
 			// only the record can say this attempt's were not kept.
-			r.warn(r.lastSeq, seq, []record.Warning{{
+			warnings = append(warnings, record.Warning{
 				About:    "artifact " + a.As,
 				Message:  err.Error(),
 				Recorded: "nothing",
-			}})
+			})
+			missingRequired = missingRequired || a.Required
 		}
 	}
+	return warnings, missingRequired
 }
 
 func (r *run) artifact(ctx context.Context, session target.Session, step scenario.Step, a scenario.Artifact, fetched map[string][]byte) ([]byte, error) {

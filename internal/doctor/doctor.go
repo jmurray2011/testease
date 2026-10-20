@@ -95,6 +95,11 @@ type Backend struct {
 	Conditional map[string]string
 }
 
+// Platform checks a provisioned artifact and its launch prerequisites.
+type Platform interface {
+	Check(context.Context, string, map[string]string) error
+}
+
 // Options is what to check and what to check it with.
 type Options struct {
 	RunsDir      string
@@ -134,6 +139,11 @@ type Options struct {
 	// Backends is the capability table. Empty leaves the capability check
 	// unmade rather than passed.
 	Backends []Backend
+
+	// Provision and Platforms describe selected native targets. Only platforms
+	// present in the resolved scenario scope are checked.
+	Provision map[string]string
+	Platforms map[string]Platform
 }
 
 // Worst is the status a caller acts on. Unchecked counts as a warning: a report
@@ -209,12 +219,45 @@ func Run(ctx context.Context, opt Options) Report {
 			r.add(media(ctx, plan, opt.Docker, opt.SSMTransferStore, opt.SSMTransferStoreValid, opt.SSMInlineMediaLimit))
 		}
 		r.add(images(ctx, plan, opt.Docker, opt.DockerContext, opt.OneShotDocker, opt.OneShotDockerContext))
+		for _, c := range platformChecks(ctx, plan, opt.Provision, opt.Platforms) {
+			r.add(c)
+		}
 		r.add(declaredJudge(plan, opt.ScenarioRoot))
 		r.add(drive(ctx, plan, opt.RunsDir, opt.Docker))
 		r.add(capabilities(plan, opt.Backends))
 	}
 
 	return r
+}
+
+func platformChecks(ctx context.Context, plan *scenario.Plan, provision map[string]string, platforms map[string]Platform) []Check {
+	var checks []Check
+	seen := map[string]bool{}
+	for _, hostName := range slices.Sorted(maps.Keys(plan.Hosts)) {
+		host := plan.Hosts[hostName]
+		if host.Provider != "ec2" && host.Provider != "ecs" {
+			continue
+		}
+		key := host.Provider + "\x00" + host.Image
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		name := "platform:" + host.Provider
+		platform := platforms[host.Provider]
+		if platform == nil {
+			checks = append(checks, Check{Name: name, Status: Unchecked,
+				Found: "no checker configured for " + host.Provider, Remedy: RemedyBackends})
+			continue
+		}
+		if err := platform.Check(ctx, host.Image, provision); err != nil {
+			checks = append(checks, Check{Name: name, Status: Fail, Found: err.Error(),
+				Remedy: "check the selected target catalog provision settings and AWS access"})
+			continue
+		}
+		checks = append(checks, Check{Name: name, Status: OK, Found: host.Image + " and its launch prerequisites are available"})
+	}
+	return checks
 }
 
 // needsDocker is resolved scope, not a global workstation requirement. A

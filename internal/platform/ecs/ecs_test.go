@@ -25,7 +25,7 @@ func (f *fakeCLI) Output(_ context.Context, args ...string) ([]byte, error) {
 	case "ecs describe-tasks":
 		return []byte(`{"tasks":[{"taskArn":"` + fictionalTask + `","lastStatus":"STOPPED","containers":[{"name":"probe","exitCode":7}]}],"failures":[]}`), nil
 	case "logs get-log-events":
-		return []byte(`{"events":[{"message":"human log"},{"message":"@@TESTEASE_FACTS:ZmFjdAlrZXkJdmFsdWUK"},{"message":"@@TESTEASE_ARTIFACT:0:Ynl0ZXM="}]}`), nil
+		return []byte(`{"events":[{"message":"human log"},{"message":"@@TESTEASE_FACTS:ZmFjdAlrZXkJdmFsdWUK"},{"message":"@@TESTEASE_ARTIFACT:0:Ynl0ZXM="},{"message":"@@TESTEASE_DONE"}]}`), nil
 	default:
 		return []byte(`{}`), nil
 	}

@@ -61,6 +61,44 @@ func TestAFileIsVerifiedStagedAndBoundByLogicalName(t *testing.T) {
 	}
 }
 
+func TestRelativeRunsDirectoryStagesAnAbsoluteMountPath(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	body := []byte("input bytes")
+	source := filepath.Join(dir, "input.rpm")
+	if err := os.WriteFile(source, body, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	descriptor := filepath.Join(dir, "inputs.yaml")
+	if err := os.WriteFile(descriptor, []byte(fmt.Sprintf(
+		"schema: 1\ninputs:\n  package: {path: input.rpm, sha256: %s}\n", sha(body),
+	)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	relativeRuns, err := filepath.Rel(cwd, filepath.Join(dir, "runs"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := LoadAndStage(descriptor, relativeRuns, map[string]scenario.Input{
+		"package": {Kind: "file"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	staged := resolved["package"].StagedPath
+	if !filepath.IsAbs(staged) {
+		t.Fatalf("staged path %q must be absolute for a Docker bind mount", staged)
+	}
+	if got, err := os.ReadFile(staged); err != nil || string(got) != string(body) {
+		t.Fatalf("staged bytes = %q, error = %v", got, err)
+	}
+}
+
 func TestAnInputWhoseBytesDoNotMatchIsRefused(t *testing.T) {
 	t.Parallel()
 

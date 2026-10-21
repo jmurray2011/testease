@@ -144,6 +144,60 @@ tests:
 	}
 }
 
+func TestBatchResolvesExplicitPathsRelativeToItsFileAndRecordsBindings(t *testing.T) {
+	root := t.TempDir()
+	batchDir := filepath.Join(root, "batches")
+	if err := os.Mkdir(batchDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(batchDir, "portable.yaml")
+	definition := `schema: 1
+name: portable
+tests:
+  - scenario: alpha
+    path_params: {store: ../batch-media/vt7}
+  - scenario: bravo
+    input_bundle_path: ../batch-media/vtapi-inputs.yaml
+`
+	if err := os.WriteFile(path, []byte(definition), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := filepath.Join(root, "batch-media", "vt7")
+	inputs := filepath.Join(root, "batch-media", "vtapi-inputs.yaml")
+	if got := loaded.Tests[0].Params["store"]; got != store {
+		t.Fatalf("resolved store = %q, want %q", got, store)
+	}
+	if got := loaded.Tests[1].InputBundle; got != inputs {
+		t.Fatalf("resolved input bundle = %q, want %q", got, inputs)
+	}
+	invoker := &recordingInvoker{args: map[string][]string{}}
+	result, err := Run(context.Background(), Options{Definition: loaded, RunsDir: root, ScenarioRoot: root, Invoker: invoker})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(invoker.args["alpha"], "store="+store) || !slices.Contains(invoker.args["bravo"], inputs) {
+		t.Fatalf("child arguments omit resolved paths: %v", invoker.args)
+	}
+	body, err := os.ReadFile(filepath.Join(result.Dir, "batch.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), store) || !strings.Contains(string(body), inputs) {
+		t.Fatalf("batch record omits resolved paths: %s", body)
+	}
+	snapshot, err := os.ReadFile(filepath.Join(result.Dir, "batch.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(snapshot) != definition {
+		t.Fatalf("source snapshot changed: %s", snapshot)
+	}
+}
+
 type variantInvoker struct {
 	mu      sync.Mutex
 	active  int

@@ -107,3 +107,23 @@ func TestJudgeKeepsDistinctLogsForOlderUnnamedBatchEntries(t *testing.T) {
 		t.Fatalf("legacy child logs = %q and %q", got.Tests[0].Log, got.Tests[1].Log)
 	}
 }
+
+func TestJudgeRejectsUnsafeNamesFromSavedBatchRecord(t *testing.T) {
+	for _, test := range []TestResult{
+		{Name: "../escape", Scenario: "alpha", RunID: "alpha-run", Status: "measured"},
+		{Name: "alpha", Scenario: "alpha", RunID: "../escape", Status: "measured"},
+	} {
+		runs := t.TempDir()
+		id := "unsafe"
+		dir := filepath.Join(runs, "batches", id)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := save(dir, Result{Schema: Schema, ID: id, Status: "measured", Tests: []TestResult{test}}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Judge(context.Background(), runs, id, &judgeInvoker{}); err == nil {
+			t.Fatalf("accepted unsafe child record %+v", test)
+		}
+	}
+}

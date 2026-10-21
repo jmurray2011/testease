@@ -3,6 +3,7 @@ package docker
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -136,6 +137,72 @@ esac`
 	}
 	if result.RC != 0 {
 		t.Errorf("RC = %d, want the /bin/sh probe to run without bash", result.RC)
+	}
+}
+
+type observedStructured chan []byte
+
+func (w observedStructured) Write(p []byte) (int, error) {
+	w <- append([]byte(nil), p...)
+	return len(p), nil
+}
+
+func TestRunScriptStreamsStructuredReadingsBeforeProbeExit(t *testing.T) {
+	t.Parallel()
+
+	release := filepath.Join(t.TempDir(), "release")
+	script := fmt.Sprintf(`channel=""
+for arg in "$@"; do
+  case "$arg" in /tmp/testease-fd3-*) channel="$arg";; esac
+done
+case " $* " in
+  *" -i "*)
+    printf 'progress\thttp.status\t404\n' > "$channel"
+    while [ ! -e '%s' ]; do sleep 0.1; done
+    printf 'fact\thttp.final\t404\n' >> "$channel"
+    exit 0;;
+  *"rm -f"*)
+    cat "$channel" 2>/dev/null
+    rm -f "$channel"
+    exit 0;;
+  *) cat "$channel" 2>/dev/null; exit $?;;
+esac`, release)
+	session := &Session{Client: fakeDocker(t, script), Container: "box"}
+	readings := make(observedStructured, 16)
+	done := make(chan error, 1)
+	go func() {
+		_, err := session.RunScript(t.Context(), []byte("#!/bin/sh\ntrue\n"), nil,
+			target.RunOpts{Stdout: io.Discard, Stderr: io.Discard, Structured: readings})
+		done <- err
+	}()
+
+	var first []byte
+	select {
+	case first = <-readings:
+	case <-time.After(5 * time.Second):
+		_ = os.WriteFile(release, nil, 0o600)
+		t.Fatal("structured progress did not arrive before the probe exited")
+	}
+	if string(first) != "progress\thttp.status\t404\n" {
+		t.Errorf("first reading = %q, want live HTTP status", first)
+	}
+	if err := os.WriteFile(release, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("probe did not finish after release")
+	}
+	var remaining string
+	for len(readings) > 0 {
+		remaining += string(<-readings)
+	}
+	if remaining != "fact\thttp.final\t404\n" {
+		t.Errorf("remaining readings = %q, want the final fact exactly once", remaining)
 	}
 }
 

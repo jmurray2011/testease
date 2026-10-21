@@ -109,7 +109,8 @@ func validateCampaignManifestResolution(manifest *scenario.Manifest, definition 
 		return err
 	}
 	for _, cell := range cells {
-		values := maps.Clone(definition.Params)
+		values := make(map[string]string, len(definition.Params)+len(cell.Params))
+		maps.Copy(values, definition.Params)
 		maps.Copy(values, cell.Params)
 		if _, err := manifest.Resolve(values); err != nil {
 			return err

@@ -1,0 +1,291 @@
+// Package batch runs independent scenarios with bounded concurrency.
+package batch
+
+import (
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"maps"
+	"os"
+	"path/filepath"
+	"regexp"
+	"slices"
+	"strings"
+	"sync"
+	"time"
+
+	"gopkg.in/yaml.v3"
+)
+
+const Schema = 1
+
+var safeName = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]*$`)
+
+// Definition is one operator-selected set of independent scenario runs.
+type Definition struct {
+	Schema   int    `yaml:"schema" json:"schema"`
+	Name     string `yaml:"name" json:"name"`
+	Parallel int    `yaml:"parallel,omitempty" json:"parallel"`
+	Tests    []Test `yaml:"tests" json:"tests"`
+	SHA256   string `yaml:"-" json:"sha256"`
+	Raw      []byte `yaml:"-" json:"-"`
+}
+
+type Test struct {
+	Scenario             string            `yaml:"scenario" json:"scenario"`
+	Params               map[string]string `yaml:"params,omitempty" json:"params,omitempty"`
+	Target               string            `yaml:"target,omitempty" json:"target,omitempty"`
+	TargetCatalog        string            `yaml:"target_catalog,omitempty" json:"target_catalog,omitempty"`
+	InputBundle          string            `yaml:"input_bundle,omitempty" json:"input_bundle,omitempty"`
+	AWSProfile           string            `yaml:"aws_profile,omitempty" json:"aws_profile,omitempty"`
+	AWSRegion            string            `yaml:"aws_region,omitempty" json:"aws_region,omitempty"`
+	ReleaseFailedTargets bool              `yaml:"release_failed_targets,omitempty" json:"release_failed_targets,omitempty"`
+}
+
+func Load(path string) (*Definition, error) {
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read batch %s: %w", path, err)
+	}
+	var d Definition
+	decoder := yaml.NewDecoder(bytes.NewReader(body))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&d); err != nil {
+		return nil, fmt.Errorf("parse batch %s: %w", path, err)
+	}
+	if d.Schema != Schema {
+		return nil, fmt.Errorf("batch %s has schema %d; this testease reads schema %d", path, d.Schema, Schema)
+	}
+	if !safeName.MatchString(d.Name) || d.Name == "." || d.Name == ".." {
+		return nil, fmt.Errorf("batch %s has invalid name %q", path, d.Name)
+	}
+	if len(d.Tests) == 0 {
+		return nil, fmt.Errorf("batch %s has no tests", path)
+	}
+	if d.Parallel == 0 {
+		d.Parallel = len(d.Tests)
+	}
+	if d.Parallel < 1 {
+		return nil, fmt.Errorf("batch %s parallel must be at least 1", path)
+	}
+	seen := map[string]bool{}
+	for _, test := range d.Tests {
+		if !safeName.MatchString(test.Scenario) || test.Scenario == "." || test.Scenario == ".." {
+			return nil, fmt.Errorf("batch %s has invalid scenario name %q", path, test.Scenario)
+		}
+		if seen[test.Scenario] {
+			return nil, fmt.Errorf("batch %s lists scenario %q twice; concurrent runs would share a run id", path, test.Scenario)
+		}
+		seen[test.Scenario] = true
+		if test.Target != "" && test.TargetCatalog == "" {
+			return nil, fmt.Errorf("batch %s scenario %q selects a target without target_catalog", path, test.Scenario)
+		}
+		for name := range test.Params {
+			if name == "" || strings.TrimSpace(name) != name || strings.Contains(name, "=") {
+				return nil, fmt.Errorf("batch %s scenario %q has invalid parameter name %q", path, test.Scenario, name)
+			}
+		}
+	}
+	sum := sha256.Sum256(body)
+	d.SHA256 = "sha256:" + hex.EncodeToString(sum[:])
+	d.Raw = body
+	return &d, nil
+}
+
+type Invoker interface {
+	Invoke(context.Context, io.Writer, io.Writer, ...string) int
+}
+
+type Options struct {
+	Definition   *Definition
+	RunsDir      string
+	ScenarioRoot string
+	Invoker      Invoker
+	Progress     io.Writer
+	ToolVersion  string
+	ToolCommit   string
+	Now          func() time.Time
+}
+
+type TestResult struct {
+	Scenario string `json:"scenario"`
+	Status   string `json:"status"`
+	RunID    string `json:"run_id,omitempty"`
+	ExitCode int    `json:"exit_code"`
+	Log      string `json:"log,omitempty"`
+}
+
+type Result struct {
+	Schema           int          `json:"schema"`
+	ID               string       `json:"batch_id"`
+	Dir              string       `json:"dir"`
+	RunsDir          string       `json:"runs_dir"`
+	Status           string       `json:"status"`
+	ExitCode         int          `json:"exit_code"`
+	DefinitionSHA256 string       `json:"definition_sha256"`
+	ToolVersion      string       `json:"tool_version,omitempty"`
+	ToolCommit       string       `json:"tool_commit,omitempty"`
+	Tests            []TestResult `json:"tests"`
+}
+
+// Run schedules all selected scenarios. A failed child does not suppress the
+// others; cancellation prevents new children and interrupts those in flight.
+func Run(ctx context.Context, opt Options) (Result, error) {
+	if opt.Definition == nil || opt.Invoker == nil {
+		return Result{}, errors.New("batch needs a definition and invoker")
+	}
+	now := time.Now
+	if opt.Now != nil {
+		now = opt.Now
+	}
+	id := fmt.Sprintf("%s-%s", opt.Definition.Name, now().UTC().Format("20060102T150405.000000000Z"))
+	dir := filepath.Join(opt.RunsDir, "batches", id)
+	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
+		return Result{}, err
+	}
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		return Result{}, fmt.Errorf("create batch record %s: %w", dir, err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "batch.yaml"), opt.Definition.Raw, 0o644); err != nil {
+		return Result{}, fmt.Errorf("snapshot batch definition: %w", err)
+	}
+	result := Result{
+		Schema: Schema, ID: id, Dir: dir, RunsDir: opt.RunsDir, Status: "running",
+		DefinitionSHA256: opt.Definition.SHA256, ToolVersion: opt.ToolVersion, ToolCommit: opt.ToolCommit,
+		Tests: make([]TestResult, len(opt.Definition.Tests)),
+	}
+	for i, test := range opt.Definition.Tests {
+		result.Tests[i] = TestResult{Scenario: test.Scenario, Status: "pending"}
+	}
+	if err := save(dir, result); err != nil {
+		return result, err
+	}
+	var mu sync.Mutex
+	slots := make(chan struct{}, opt.Definition.Parallel)
+	var wg sync.WaitGroup
+	for i, test := range opt.Definition.Tests {
+		select {
+		case <-ctx.Done():
+			break
+		case slots <- struct{}{}:
+		}
+		if ctx.Err() != nil {
+			break
+		}
+		mu.Lock()
+		result.Tests[i].Status = "running"
+		err := save(dir, result)
+		mu.Unlock()
+		if err != nil {
+			<-slots
+			return result, err
+		}
+		wg.Add(1)
+		go func(i int, test Test) {
+			defer wg.Done()
+			defer func() { <-slots }()
+			child := invoke(ctx, opt, dir, test)
+			mu.Lock()
+			result.Tests[i] = child
+			_ = save(dir, result)
+			mu.Unlock()
+		}(i, test)
+	}
+	wg.Wait()
+	for i := range result.Tests {
+		if result.Tests[i].Status == "pending" {
+			result.Tests[i].Status = "skipped"
+		}
+		if result.ExitCode == 0 && result.Tests[i].ExitCode != 0 {
+			result.ExitCode = result.Tests[i].ExitCode
+		}
+	}
+	if ctx.Err() != nil {
+		result.Status, result.ExitCode = "interrupted", 12
+	} else if result.ExitCode != 0 {
+		result.Status = "failed"
+	} else {
+		result.Status = "measured"
+	}
+	return result, save(dir, result)
+}
+
+func invoke(ctx context.Context, opt Options, dir string, test Test) TestResult {
+	result := TestResult{Scenario: test.Scenario, Status: "failed", Log: test.Scenario + ".log"}
+	log, err := os.Create(filepath.Join(dir, result.Log))
+	if err != nil {
+		result.ExitCode = 10
+		return result
+	}
+	defer func() { _ = log.Close() }()
+	args := []string{"--runs-dir", opt.RunsDir, "--scenario-root", opt.ScenarioRoot,
+		"run", test.Scenario, "--output", "json", "--progress", "plain"}
+	for _, name := range slices.Sorted(maps.Keys(test.Params)) {
+		args = append(args, "--param", name+"="+test.Params[name])
+	}
+	if test.Target != "" {
+		args = append(args, "--target", test.Target)
+	}
+	if test.TargetCatalog != "" {
+		args = append(args, "--target-catalog", test.TargetCatalog)
+	}
+	if test.InputBundle != "" {
+		args = append(args, "--input-bundle", test.InputBundle)
+	}
+	if test.AWSProfile != "" {
+		args = append(args, "--aws-profile", test.AWSProfile)
+	}
+	if test.AWSRegion != "" {
+		args = append(args, "--aws-region", test.AWSRegion)
+	}
+	if test.ReleaseFailedTargets {
+		args = append(args, "--release-failed-targets")
+	}
+	var stdout bytes.Buffer
+	stderr := io.Writer(log)
+	if opt.Progress != nil {
+		stderr = io.MultiWriter(log, opt.Progress)
+	}
+	result.ExitCode = opt.Invoker.Invoke(ctx, &stdout, stderr, args...)
+	_, _ = log.Write(stdout.Bytes())
+	var response struct {
+		RunID string `json:"run_id"`
+	}
+	if err := json.Unmarshal(bytes.TrimSpace(stdout.Bytes()), &response); err == nil {
+		result.RunID = response.RunID
+	} else if result.ExitCode == 0 {
+		result.ExitCode = 10
+		_, _ = fmt.Fprintf(log, "decode child run result: %v\n", err)
+	}
+	if result.ExitCode == 0 {
+		result.Status = "measured"
+	} else if ctx.Err() != nil {
+		result.Status = "interrupted"
+	}
+	return result
+}
+
+func save(dir string, result Result) error {
+	file, err := os.CreateTemp(dir, ".batch-*.json")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.Remove(file.Name()) }()
+	if err := json.NewEncoder(file).Encode(result); err != nil {
+		_ = file.Close()
+		return err
+	}
+	if err := file.Sync(); err != nil {
+		_ = file.Close()
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	return os.Rename(file.Name(), filepath.Join(dir, "batch.json"))
+}

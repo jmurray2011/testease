@@ -170,13 +170,15 @@ func Run(ctx context.Context, opt Options) (Result, error) {
 	slots := make(chan struct{}, opt.Definition.Parallel)
 	var wg sync.WaitGroup
 	var recordErr error
+schedule:
 	for i, test := range opt.Definition.Tests {
 		select {
 		case <-ctx.Done():
-			break
+			break schedule
 		case slots <- struct{}{}:
 		}
 		if ctx.Err() != nil {
+			<-slots
 			break
 		}
 		mu.Lock()

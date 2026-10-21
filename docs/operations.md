@@ -83,7 +83,7 @@ instead of `params` for path valued scenario parameters, or `input_bundle_path`
 instead of `input_bundle`. These two fields resolve relative to the batch YAML
 file, including `..` segments, and pass absolute paths to doctor and run. For
 example, a batch at `batches/install.yaml` can use
-`path_params: {store: ../batch-media/vt7}`. The original YAML is snapshotted as
+`path_params: {store: ../batch-media/package-a}`. The original YAML is snapshotted as
 `batch.yaml`, and the absolute values are saved under `path_bindings` in
 `batch.json`. A test may also set `aws_profile`, `aws_region`, or
 `release_failed_targets`. The batch record and separate child logs live under

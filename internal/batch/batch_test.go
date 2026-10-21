@@ -155,9 +155,9 @@ func TestBatchResolvesExplicitPathsRelativeToItsFileAndRecordsBindings(t *testin
 name: portable
 tests:
   - scenario: alpha
-    path_params: {store: ../batch-media/vt7}
+    path_params: {store: ../batch-media/package-a}
   - scenario: bravo
-    input_bundle_path: ../batch-media/vtapi-inputs.yaml
+    input_bundle_path: ../batch-media/service-inputs.yaml
 `
 	if err := os.WriteFile(path, []byte(definition), 0o644); err != nil {
 		t.Fatal(err)
@@ -166,8 +166,8 @@ tests:
 	if err != nil {
 		t.Fatal(err)
 	}
-	store := filepath.Join(root, "batch-media", "vt7")
-	inputs := filepath.Join(root, "batch-media", "vtapi-inputs.yaml")
+	store := filepath.Join(root, "batch-media", "package-a")
+	inputs := filepath.Join(root, "batch-media", "service-inputs.yaml")
 	if got := loaded.Tests[0].Params["store"]; got != store {
 		t.Fatalf("resolved store = %q, want %q", got, store)
 	}

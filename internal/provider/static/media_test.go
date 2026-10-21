@@ -62,10 +62,10 @@ func (s *mediaSession) RunScript(_ context.Context, script []byte, _ []string, o
 func TestWindowsMediaHashMakesPowerShellErrorsVisible(t *testing.T) {
 	t.Parallel()
 
-	session := &mediaSession{reportRC: 1, reportError: `Get-FileHash: Cannot find path C:\sctools\vt-win-lib.ps1`}
+	session := &mediaSession{reportRC: 1, reportError: `Get-FileHash: Cannot find path C:\tools\helper.ps1`}
 	machine := &machine{spec: target.Spec{Backend: "winrm"}, session: session}
 
-	_, err := machine.remoteSHA256(t.Context(), `C:\sctools\vt-win-lib.ps1`)
+	_, err := machine.remoteSHA256(t.Context(), `C:\tools\helper.ps1`)
 	if err == nil || !strings.Contains(err.Error(), "Cannot find path") {
 		t.Fatalf("remoteSHA256 error = %v, want the PowerShell diagnostic", err)
 	}

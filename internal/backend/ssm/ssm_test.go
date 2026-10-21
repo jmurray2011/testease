@@ -300,7 +300,7 @@ func TestLargeMediaRefusesBeforeBuildingAnOversizedDocument(t *testing.T) {
 func TestInlineMediaCreatesItsDestinationDirectory(t *testing.T) {
 	t.Parallel()
 
-	windows := inlinePutCommand("Windows", `C:\sctools\vt-win-lib.ps1`, 0o444, "eA==")
+	windows := inlinePutCommand("Windows", `C:\tools\helper.ps1`, 0o444, "eA==")
 	for _, want := range []string{"ErrorActionPreference", "Split-Path -Parent", "New-Item -ItemType Directory", "WriteAllBytes"} {
 		if !strings.Contains(windows, want) {
 			t.Errorf("Windows inline put lacks %q:\n%s", want, windows)

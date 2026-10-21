@@ -689,7 +689,7 @@ params:
 hosts:
   box:
     provider: docker
-    image: "vt-installed:{{crossingTarget .crossing}}"
+    image: "product-installed:{{crossingTarget .crossing}}"
 steps:
   - label: restore the fixture
     host: box
@@ -700,7 +700,7 @@ steps:
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
-	if got := plan.Hosts["box"].Image; got != "vt-installed:7.2.1-patched" {
+	if got := plan.Hosts["box"].Image; got != "product-installed:7.2.1-patched" {
 		t.Errorf("image = %q, want target rung", got)
 	}
 	if got := plan.Steps[0].Args; len(got) != 2 || got[0] != "6.2.4" || got[1] != "7.2.1-patched" {
@@ -720,7 +720,7 @@ params:
 hosts:
   box:
     provider: docker
-    image: "vt-installed:{{crossingTarget .crossing}}"
+    image: "product-installed:{{crossingTarget .crossing}}"
 steps:
   - label: restore the fixture
     host: box

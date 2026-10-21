@@ -101,6 +101,35 @@ func TestBatchValidateChecksEveryScenarioBeforeProvisioning(t *testing.T) {
 	}
 }
 
+func TestBatchValidateAcceptsMatrixWithoutParameterOverrides(t *testing.T) {
+	rootDir := t.TempDir()
+	scenarioDir := filepath.Join(rootDir, "matrix")
+	if err := os.MkdirAll(filepath.Join(scenarioDir, "probes"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	manifest := `schema: 1
+name: matrix
+question: does it work?
+params:
+  history: {values: "writer,clean", axis: true}
+hosts:
+  box: {provider: docker, image: neutral-base:1}
+steps:
+  - label: check
+    host: box
+    probe: probes/check.sh
+`
+	if err := os.WriteFile(filepath.Join(scenarioDir, "scenario.yaml"), []byte(manifest), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(scenarioDir, "probes", "check.sh"), []byte("#!/bin/sh\ntrue\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateBatch(&batch.Definition{Tests: []batch.Test{{Scenario: "matrix"}}}, rootDir); err != nil {
+		t.Fatalf("validate batch matrix: %v", err)
+	}
+}
+
 func TestBatchStatusDistinguishesNamedRunsOfOneScenario(t *testing.T) {
 	runs := t.TempDir()
 	dir := filepath.Join(runs, "batches", "two-variants")

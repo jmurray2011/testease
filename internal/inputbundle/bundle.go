@@ -64,6 +64,10 @@ func LoadAndStage(path, runsDir string, required map[string]scenario.Input) (map
 	if path == "" {
 		return nil, fmt.Errorf("the scenario declares %d input(s); supply --input-bundle <descriptor>", len(required))
 	}
+	runsDir, err := filepath.Abs(runsDir)
+	if err != nil {
+		return nil, fmt.Errorf("resolve runs directory: %w", err)
+	}
 
 	body, err := os.ReadFile(path)
 	if err != nil {

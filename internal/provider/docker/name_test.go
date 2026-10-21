@@ -70,3 +70,25 @@ func TestALongRunIdDoesNotCostTheCellItsNetwork(t *testing.T) {
 		t.Errorf("network name is %d characters: %q", len(first), first)
 	}
 }
+
+func TestLongBatchRunIdsKeepDistinctTargetsAndNetworks(t *testing.T) {
+	t.Parallel()
+
+	firstRun := "variant-20261021T024200Z-batch-7388166f84a4b201ed47b6a6-1"
+	secondRun := "variant-20261021T024200Z-batch-7388166f84a4b201ed47b6a6-2"
+	firstContainer := containerName(firstRun, "", "box")
+	secondContainer := containerName(secondRun, "", "box")
+	if firstContainer == secondContainer {
+		t.Fatalf("distinct batch runs share container name %q", firstContainer)
+	}
+	firstNetwork := networkName(firstRun, "")
+	secondNetwork := networkName(secondRun, "")
+	if firstNetwork == secondNetwork {
+		t.Fatalf("distinct batch runs share network name %q", firstNetwork)
+	}
+	for _, name := range []string{firstContainer, secondContainer, firstNetwork, secondNetwork} {
+		if len(name) > 60 {
+			t.Errorf("docker name exceeds 60 characters: %q", name)
+		}
+	}
+}

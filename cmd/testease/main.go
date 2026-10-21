@@ -135,7 +135,7 @@ func newRoot() *cobra.Command {
 		validateCmd(), planCmd(), doctorCmd(), runCmd(), judgeCmd(), renderCmd(), runsCmd(), scenariosCmd(), backendsCmd(),
 	}
 	advancedCommands := []*cobra.Command{
-		reproduceCmd(), campaignCmd(), followCmd(), packageCmd(), publishCmd(), reapCmd(), importCmd(), targetsCmd(),
+		reproduceCmd(), campaignCmd(), batchCmd(), followCmd(), packageCmd(), publishCmd(), reapCmd(), importCmd(), targetsCmd(),
 	}
 	for _, cmd := range coreCommands {
 		cmd.GroupID = "core"
@@ -176,6 +176,9 @@ func codeFor(err error) int {
 		return exitOK
 	}
 	if code, ok := codeFromCampaign(err); ok {
+		return code
+	}
+	if code, ok := codeFromBatch(err); ok {
 		return code
 	}
 

@@ -78,7 +78,14 @@ bundle, and provider prerequisites, reporting all entries even when one fails.
 `batch run` performs strict preflight before creating a batch record or starting
 any child. Catalog and input bundle paths in the file are relative to the current
 working directory. Docker media bind sources must be absolute host paths after
-scenario parameters resolve. A test may also set `aws_profile`, `aws_region`, or
+scenario parameters resolve. For portable media bindings, use `path_params`
+instead of `params` for path valued scenario parameters, or `input_bundle_path`
+instead of `input_bundle`. These two fields resolve relative to the batch YAML
+file, including `..` segments, and pass absolute paths to doctor and run. For
+example, a batch at `batches/install.yaml` can use
+`path_params: {store: ../batch-media/vt7}`. The original YAML is snapshotted as
+`batch.yaml`, and the absolute values are saved under `path_bindings` in
+`batch.json`. A test may also set `aws_profile`, `aws_region`, or
 `release_failed_targets`. The batch record and separate child logs live under
 `RUNS_DIR/batches/<batch-id>`; child run records stay in `RUNS_DIR`. Live child
 progress names its test entry. The batch exits nonzero if any child run fails.

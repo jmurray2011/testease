@@ -174,6 +174,11 @@ tests:
 	if got := loaded.Tests[1].InputBundle; got != inputs {
 		t.Fatalf("resolved input bundle = %q, want %q", got, inputs)
 	}
+	preflightInvoker := &preflightInvoker{}
+	preflight := Preflight(context.Background(), Options{Definition: loaded, RunsDir: root, ScenarioRoot: root, Invoker: preflightInvoker}, true)
+	if preflight.Status != "passed" || !slices.Contains(preflightInvoker.calls[0], "store="+store) || !slices.Contains(preflightInvoker.calls[1], inputs) {
+		t.Fatalf("preflight omitted resolved paths: %+v, calls=%v", preflight, preflightInvoker.calls)
+	}
 	invoker := &recordingInvoker{args: map[string][]string{}}
 	result, err := Run(context.Background(), Options{Definition: loaded, RunsDir: root, ScenarioRoot: root, Invoker: invoker})
 	if err != nil {
@@ -195,6 +200,31 @@ tests:
 	}
 	if string(snapshot) != definition {
 		t.Fatalf("source snapshot changed: %s", snapshot)
+	}
+}
+
+func TestBatchRejectsAmbiguousOrInvalidPathBindings(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		body string
+		want string
+	}{
+		{"duplicate parameter", "    params: {store: /old}\n    path_params: {store: ../media}\n", "both params and path_params"},
+		{"duplicate input bundle", "    input_bundle: /old/inputs.yaml\n    input_bundle_path: ../inputs.yaml\n", "both input_bundle and input_bundle_path"},
+		{"absolute path parameter", "    path_params: {store: /absolute/media}\n", "nonempty relative path"},
+		{"empty path parameter", "    path_params: {store: ''}\n", "nonempty relative path"},
+		{"absolute input bundle", "    input_bundle_path: /absolute/inputs.yaml\n", "nonempty relative path"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "batch.yaml")
+			body := "schema: 1\nname: smoke\ntests:\n  - scenario: alpha\n" + tc.body
+			if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := Load(path); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("load error = %v, want %q", err, tc.want)
+			}
+		})
 	}
 }
 

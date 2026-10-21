@@ -40,9 +40,11 @@ type Test struct {
 	Name                 string            `yaml:"name,omitempty" json:"name,omitempty"`
 	Scenario             string            `yaml:"scenario" json:"scenario"`
 	Params               map[string]string `yaml:"params,omitempty" json:"params,omitempty"`
+	PathParams           map[string]string `yaml:"path_params,omitempty" json:"-"`
 	Target               string            `yaml:"target,omitempty" json:"target,omitempty"`
 	TargetCatalog        string            `yaml:"target_catalog,omitempty" json:"target_catalog,omitempty"`
 	InputBundle          string            `yaml:"input_bundle,omitempty" json:"input_bundle,omitempty"`
+	InputBundlePath      string            `yaml:"input_bundle_path,omitempty" json:"-"`
 	AWSProfile           string            `yaml:"aws_profile,omitempty" json:"aws_profile,omitempty"`
 	AWSRegion            string            `yaml:"aws_region,omitempty" json:"aws_region,omitempty"`
 	ReleaseFailedTargets bool              `yaml:"release_failed_targets,omitempty" json:"release_failed_targets,omitempty"`
@@ -74,15 +76,21 @@ func Load(path string) (*Definition, error) {
 	if d.Parallel < 1 {
 		return nil, fmt.Errorf("batch %s parallel must be at least 1", path)
 	}
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return nil, fmt.Errorf("resolve batch path %s: %w", path, err)
+	}
+	batchDir := filepath.Dir(absPath)
 	seen := map[string]bool{}
-	for _, test := range d.Tests {
+	for i := range d.Tests {
+		test := &d.Tests[i]
 		if !safeName.MatchString(test.Scenario) || test.Scenario == "." || test.Scenario == ".." {
 			return nil, fmt.Errorf("batch %s has invalid scenario name %q", path, test.Scenario)
 		}
 		if test.Name != "" && (!safeName.MatchString(test.Name) || test.Name == "." || test.Name == "..") {
 			return nil, fmt.Errorf("batch %s has invalid test name %q", path, test.Name)
 		}
-		name := testName(test)
+		name := testName(*test)
 		if seen[name] {
 			return nil, fmt.Errorf("batch %s has duplicate test name %q; name each entry distinctly", path, name)
 		}
@@ -95,11 +103,46 @@ func Load(path string) (*Definition, error) {
 				return nil, fmt.Errorf("batch %s scenario %q has invalid parameter name %q", path, test.Scenario, name)
 			}
 		}
+		for name, value := range test.PathParams {
+			if name == "" || strings.TrimSpace(name) != name || strings.Contains(name, "=") {
+				return nil, fmt.Errorf("batch %s scenario %q has invalid path parameter name %q", path, test.Scenario, name)
+			}
+			if _, exists := test.Params[name]; exists {
+				return nil, fmt.Errorf("batch %s scenario %q binds parameter %q in both params and path_params", path, test.Scenario, name)
+			}
+			resolved, err := resolvePathBinding(batchDir, value)
+			if err != nil {
+				return nil, fmt.Errorf("batch %s scenario %q path_params.%s: %w", path, test.Scenario, name, err)
+			}
+			if test.Params == nil {
+				test.Params = make(map[string]string)
+			}
+			test.Params[name] = resolved
+			test.PathParams[name] = resolved
+		}
+		if test.InputBundlePath != "" {
+			if test.InputBundle != "" {
+				return nil, fmt.Errorf("batch %s scenario %q binds both input_bundle and input_bundle_path", path, test.Scenario)
+			}
+			resolved, err := resolvePathBinding(batchDir, test.InputBundlePath)
+			if err != nil {
+				return nil, fmt.Errorf("batch %s scenario %q input_bundle_path: %w", path, test.Scenario, err)
+			}
+			test.InputBundle = resolved
+			test.InputBundlePath = resolved
+		}
 	}
 	sum := sha256.Sum256(body)
 	d.SHA256 = "sha256:" + hex.EncodeToString(sum[:])
 	d.Raw = body
 	return &d, nil
+}
+
+func resolvePathBinding(batchDir, value string) (string, error) {
+	if strings.TrimSpace(value) == "" || filepath.IsAbs(value) {
+		return "", fmt.Errorf("path %q must be a nonempty relative path", value)
+	}
+	return filepath.Join(batchDir, value), nil
 }
 
 func testName(test Test) string {
@@ -134,16 +177,24 @@ type TestResult struct {
 }
 
 type Result struct {
-	Schema           int          `json:"schema"`
-	ID               string       `json:"batch_id"`
-	Dir              string       `json:"dir"`
-	RunsDir          string       `json:"runs_dir"`
-	Status           string       `json:"status"`
-	ExitCode         int          `json:"exit_code"`
-	DefinitionSHA256 string       `json:"definition_sha256"`
-	ToolVersion      string       `json:"tool_version,omitempty"`
-	ToolCommit       string       `json:"tool_commit,omitempty"`
-	Tests            []TestResult `json:"tests"`
+	Schema           int           `json:"schema"`
+	ID               string        `json:"batch_id"`
+	Dir              string        `json:"dir"`
+	RunsDir          string        `json:"runs_dir"`
+	Status           string        `json:"status"`
+	ExitCode         int           `json:"exit_code"`
+	DefinitionSHA256 string        `json:"definition_sha256"`
+	ToolVersion      string        `json:"tool_version,omitempty"`
+	ToolCommit       string        `json:"tool_commit,omitempty"`
+	PathBindings     []PathBinding `json:"path_bindings,omitempty"`
+	Tests            []TestResult  `json:"tests"`
+}
+
+// PathBinding records the absolute paths passed to an entry from relative bindings.
+type PathBinding struct {
+	Name        string            `json:"name"`
+	Params      map[string]string `json:"params,omitempty"`
+	InputBundle string            `json:"input_bundle,omitempty"`
 }
 
 // Run schedules all selected scenarios. A failed child does not suppress the
@@ -175,6 +226,11 @@ func Run(ctx context.Context, opt Options) (Result, error) {
 	}
 	for i, test := range opt.Definition.Tests {
 		result.Tests[i] = TestResult{Name: testName(test), Scenario: test.Scenario, Status: "pending"}
+		if len(test.PathParams) > 0 || test.InputBundlePath != "" {
+			result.PathBindings = append(result.PathBindings, PathBinding{
+				Name: testName(test), Params: maps.Clone(test.PathParams), InputBundle: test.InputBundlePath,
+			})
+		}
 	}
 	if err := save(dir, result); err != nil {
 		return result, err

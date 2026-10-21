@@ -37,6 +37,7 @@ type Definition struct {
 }
 
 type Test struct {
+	Name                 string            `yaml:"name,omitempty" json:"name,omitempty"`
 	Scenario             string            `yaml:"scenario" json:"scenario"`
 	Params               map[string]string `yaml:"params,omitempty" json:"params,omitempty"`
 	Target               string            `yaml:"target,omitempty" json:"target,omitempty"`
@@ -78,10 +79,14 @@ func Load(path string) (*Definition, error) {
 		if !safeName.MatchString(test.Scenario) || test.Scenario == "." || test.Scenario == ".." {
 			return nil, fmt.Errorf("batch %s has invalid scenario name %q", path, test.Scenario)
 		}
-		if seen[test.Scenario] {
-			return nil, fmt.Errorf("batch %s lists scenario %q twice; concurrent runs would share a run id", path, test.Scenario)
+		if test.Name != "" && (!safeName.MatchString(test.Name) || test.Name == "." || test.Name == "..") {
+			return nil, fmt.Errorf("batch %s has invalid test name %q", path, test.Name)
 		}
-		seen[test.Scenario] = true
+		name := testName(test)
+		if seen[name] {
+			return nil, fmt.Errorf("batch %s has duplicate test name %q; name each entry distinctly", path, name)
+		}
+		seen[name] = true
 		if test.Target != "" && test.TargetCatalog == "" {
 			return nil, fmt.Errorf("batch %s scenario %q selects a target without target_catalog", path, test.Scenario)
 		}
@@ -95,6 +100,13 @@ func Load(path string) (*Definition, error) {
 	d.SHA256 = "sha256:" + hex.EncodeToString(sum[:])
 	d.Raw = body
 	return &d, nil
+}
+
+func testName(test Test) string {
+	if test.Name != "" {
+		return test.Name
+	}
+	return test.Scenario
 }
 
 type Invoker interface {
@@ -113,6 +125,7 @@ type Options struct {
 }
 
 type TestResult struct {
+	Name     string `json:"name,omitempty"`
 	Scenario string `json:"scenario"`
 	Status   string `json:"status"`
 	RunID    string `json:"run_id,omitempty"`
@@ -144,6 +157,7 @@ func Run(ctx context.Context, opt Options) (Result, error) {
 		now = opt.Now
 	}
 	id := fmt.Sprintf("%s-%s", opt.Definition.Name, now().UTC().Format("20060102T150405.000000000Z"))
+	digest := sha256.Sum256([]byte(id))
 	dir := filepath.Join(opt.RunsDir, "batches", id)
 	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
 		return Result{}, err
@@ -160,7 +174,7 @@ func Run(ctx context.Context, opt Options) (Result, error) {
 		Tests: make([]TestResult, len(opt.Definition.Tests)),
 	}
 	for i, test := range opt.Definition.Tests {
-		result.Tests[i] = TestResult{Scenario: test.Scenario, Status: "pending"}
+		result.Tests[i] = TestResult{Name: testName(test), Scenario: test.Scenario, Status: "pending"}
 	}
 	if err := save(dir, result); err != nil {
 		return result, err
@@ -197,7 +211,7 @@ schedule:
 		go func(i int, test Test) {
 			defer wg.Done()
 			defer func() { <-slots }()
-			child := invoke(ctx, opt, dir, test, &progressMu)
+			child := invoke(ctx, opt, dir, test, fmt.Sprintf("batch-%x-%d", digest[:12], i+1), &progressMu)
 			mu.Lock()
 			result.Tests[i] = child
 			if err := save(dir, result); err != nil {
@@ -225,8 +239,9 @@ schedule:
 	return result, errors.Join(recordErr, save(dir, result))
 }
 
-func invoke(ctx context.Context, opt Options, dir string, test Test, progressMu *sync.Mutex) TestResult {
-	result := TestResult{Scenario: test.Scenario, Status: "failed", Log: test.Scenario + ".log"}
+func invoke(ctx context.Context, opt Options, dir string, test Test, suffix string, progressMu *sync.Mutex) TestResult {
+	name := testName(test)
+	result := TestResult{Name: name, Scenario: test.Scenario, Status: "failed", Log: name + ".log"}
 	log, err := os.Create(filepath.Join(dir, result.Log))
 	if err != nil {
 		result.ExitCode = 10
@@ -235,7 +250,7 @@ func invoke(ctx context.Context, opt Options, dir string, test Test, progressMu 
 	defer func() { _ = log.Close() }()
 	args := []string{
 		"--runs-dir", opt.RunsDir, "--scenario-root", opt.ScenarioRoot,
-		"run", test.Scenario, "--output", "json", "--progress", "plain",
+		"run", test.Scenario, "--output", "json", "--progress", "plain", "--run-suffix", suffix,
 	}
 	for _, name := range slices.Sorted(maps.Keys(test.Params)) {
 		args = append(args, "--param", name+"="+test.Params[name])
@@ -261,7 +276,7 @@ func invoke(ctx context.Context, opt Options, dir string, test Test, progressMu 
 	var stdout bytes.Buffer
 	stderr := io.Writer(log)
 	if opt.Progress != nil {
-		progress := &namedProgress{out: opt.Progress, mu: progressMu, name: test.Scenario}
+		progress := &namedProgress{out: opt.Progress, mu: progressMu, name: name}
 		defer progress.flush()
 		stderr = io.MultiWriter(log, progress)
 	}

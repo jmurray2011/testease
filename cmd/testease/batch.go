@@ -44,7 +44,7 @@ func batchValidateCmd() *cobra.Command {
 			if flagString(cmd, "output") == "json" {
 				return writeJSON(cmd, map[string]any{"batch": definition.Name, "tests": len(definition.Tests), "valid": true})
 			}
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "valid batch %s (%d scenarios)\n", definition.Name, len(definition.Tests))
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "valid batch %s (%d tests)\n", definition.Name, len(definition.Tests))
 			return nil
 		},
 	}
@@ -114,9 +114,9 @@ func batchRunCmd() *cobra.Command {
 					return err
 				}
 			} else {
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%d scenario(s)\t%s\n", result.ID, result.Status, len(result.Tests), result.Dir)
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%d test(s)\t%s\n", result.ID, result.Status, len(result.Tests), result.Dir)
 				for _, test := range result.Tests {
-					_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  %s\t%s\t%s\n", test.Scenario, test.Status, test.RunID)
+					_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  %s\t%s\t%s\n", batchTestDisplay(test), test.Status, test.RunID)
 				}
 			}
 			if result.ExitCode != 0 {
@@ -132,7 +132,7 @@ func batchRunCmd() *cobra.Command {
 func batchStatusCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "status <batch-id>",
-		Short: "show the saved status of each batch scenario",
+		Short: "show the saved status of each batch test",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			path := filepath.Join(flagString(cmd, "runs-dir"), "batches", args[0], "batch.json")
@@ -149,13 +149,20 @@ func batchStatusCmd() *cobra.Command {
 			}
 			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\n", result.ID, result.Status)
 			for _, test := range result.Tests {
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  %s\t%s\t%s\n", test.Scenario, test.Status, test.RunID)
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  %s\t%s\t%s\n", batchTestDisplay(test), test.Status, test.RunID)
 			}
 			return nil
 		},
 	}
 	cmd.Flags().StringP("output", "o", "text", "text or json")
 	return cmd
+}
+
+func batchTestDisplay(test batch.TestResult) string {
+	if test.Name != "" && test.Name != test.Scenario {
+		return fmt.Sprintf("%s (%s)", test.Name, test.Scenario)
+	}
+	return test.Scenario
 }
 
 type batchExitError struct {

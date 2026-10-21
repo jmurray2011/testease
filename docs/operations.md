@@ -33,20 +33,28 @@ capability, while probes still measure what the target actually is.
 
 ## Independent scenario batches
 
-A batch lists scenarios that can run independently. Its `parallel` value bounds
-the number of scenario runs in flight. When omitted, all listed scenarios may
-start together. Each run gets its own record and target lifecycle; a failure in
-one does not suppress the others.
+A batch lists tests that can run independently. Its `parallel` value bounds
+the number of runs in flight. When omitted, all listed tests may start
+together. Each run gets its own record and target lifecycle; a failure in one
+does not suppress the others. Give entries distinct `name` values when the
+same scenario runs against different parameters or targets; without `name`,
+the scenario name is used. A batch-specific suffix keeps their run IDs distinct.
 
 ```yaml
 schema: 1
 name: smoke-set
 parallel: 3
 tests:
-  - scenario: install-check
+  - name: install-old
+    scenario: install-check
     target: vm-lane
     target_catalog: private-targets.yaml
     params: {version: "1.2.3"}
+  - name: install-new
+    scenario: install-check
+    target: second-vm-lane
+    target_catalog: private-targets.yaml
+    params: {version: "1.2.4"}
   - scenario: api-check
     target: container-lane
     target_catalog: private-targets.yaml
@@ -67,12 +75,12 @@ any run. Catalog and input bundle paths in the file are relative to the current
 working directory. A test may also set `aws_profile`, `aws_region`, or
 `release_failed_targets`. The batch record and separate child logs live under
 `RUNS_DIR/batches/<batch-id>`; child run records stay in `RUNS_DIR`. Live child
-progress names its scenario. The batch exits nonzero if any child run fails.
-Names in `tests` must be distinct because simultaneous runs of the same
-scenario can otherwise ask for the same run ID. For one scenario swept across
-many values, use its matrix and `testease run --par`.
+progress names its test entry. The batch exits nonzero if any child run fails.
+Entry names must be distinct, including names inferred from scenarios. For a
+single scenario whose values form an axis and need one matrix verdict, use its
+matrix and `testease run --par`.
 
-`parallel` counts scenarios. A scenario with several hosts can have several
+`parallel` counts test entries. A scenario with several hosts can have several
 targets live; each child matrix runs one cell at a time. Plan AWS capacity
 using the total target count.
 

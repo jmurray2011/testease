@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -39,6 +40,7 @@ func runCmd() *cobra.Command {
 	cmd.Flags().StringArray("matrix", nil, "sweep an axis, k=v1,v2 (repeatable); without it a scenario's own axes are used")
 	cmd.Flags().Int("par", 1, "how many cells of a census run at once")
 	cmd.Flags().String("resume", "", "run id of a census to continue; reruns every cell of it that is not measured")
+	cmd.Flags().String("run-suffix", "", "safe suffix for a fresh run id, used to distinguish concurrent runs of one scenario")
 	cmd.Flags().Bool("keep", false, "leave targets standing after a clean run")
 	cmd.Flags().Bool("release-failed-targets", false, "release disposable targets after failed cells instead of retaining them for inspection")
 	cmd.Flags().String("docker-context", os.Getenv("TESTEASE_DOCKER_CONTEXT"),
@@ -134,6 +136,10 @@ func doRun(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	suffix, err := runSuffix(cmd)
+	if err != nil {
+		return &runner.PreconditionError{Message: err.Error()}
+	}
 
 	params, selection, err := selectedParams(cmd)
 	if err != nil {
@@ -174,6 +180,9 @@ func doRun(cmd *cobra.Command, args []string) error {
 	runID := flagString(cmd, "resume")
 	if runID == "" {
 		runID = record.RunID(manifest.Name, time.Now())
+		if suffix != "" {
+			runID += "-" + suffix
+		}
 	}
 	log = log.With("run", runID)
 
@@ -282,6 +291,22 @@ func doRun(cmd *cobra.Command, args []string) error {
 		remedy = fmt.Sprintf("testease doctor %s --scenario-root %s", args[0], flagString(cmd, "scenario-root"))
 	}
 	return runErrorWithRemedy(outcome, runErr, remedy)
+}
+
+var safeRunSuffix = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]*$`)
+
+func runSuffix(cmd *cobra.Command) (string, error) {
+	suffix := flagString(cmd, "run-suffix")
+	if suffix == "" {
+		return "", nil
+	}
+	if len(suffix) > 64 || !safeRunSuffix.MatchString(suffix) {
+		return "", fmt.Errorf("invalid run suffix %q; use up to 64 ASCII letters, digits, dots, underscores or hyphens, starting with a letter or digit", suffix)
+	}
+	if flagString(cmd, "resume") != "" {
+		return "", fmt.Errorf("--run-suffix cannot be used with --resume")
+	}
+	return suffix, nil
 }
 
 func runProgress(cmd *cobra.Command) (*progressReporter, error) {

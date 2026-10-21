@@ -42,6 +42,7 @@ const (
 	KindMediaStarted      Kind = "media-stage-started"
 	KindMediaStaged       Kind = "media-staged"
 	KindStepStarted       Kind = "step-started"
+	KindProbeProgress     Kind = "probe-progress"
 	KindOperation         Kind = "operation"
 	KindFact              Kind = "fact"
 	KindFingerprint       Kind = "fingerprint"
@@ -62,6 +63,7 @@ var knownKinds = map[Kind]bool{
 	KindMediaStarted:      true,
 	KindMediaStaged:       true,
 	KindStepStarted:       true,
+	KindProbeProgress:     true,
 	KindOperation:         true,
 	KindFact:              true,
 	KindFingerprint:       true,

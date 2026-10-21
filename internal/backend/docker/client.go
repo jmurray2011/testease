@@ -166,12 +166,67 @@ func (s *Session) RunScript(ctx context.Context, script []byte, args []string, o
 	execArgs = append(execArgs, "-s", "--")
 	execArgs = append(execArgs, args...)
 
+	// Docker exec cannot carry fd 3 as a separate stream. Read its target file
+	// while the probe runs so progress reaches the caller before the exit, then
+	// fetch any remaining bytes once the probe has stopped.
+	pollCtx, stopPolling := context.WithCancel(ctx)
+	seen := make(chan int, 1)
+	go func() { seen <- s.pollChannel(pollCtx, channel, opt.Structured) }()
 	result, err := s.exec(ctx, execArgs, bytes.NewReader(script), opt)
+	stopPolling()
+	streamed := <-seen
 
 	// Collect the structured channel whatever happened to the probe: a probe
 	// that died after recording a reading still recorded it.
-	s.drainChannel(ctx, channel, opt.Structured)
+	into := opt.Structured
+	if streamed > 0 {
+		into = &skipPrefixWriter{skip: streamed, into: into}
+	}
+	s.drainChannel(ctx, channel, into)
 	return result, err
+}
+
+// pollChannel is best effort: a missing file or a transient exec failure does
+// not change the probe's result. The final drain retrieves anything it missed.
+func (s *Session) pollChannel(ctx context.Context, path string, into io.Writer) int {
+	if into == nil {
+		return 0
+	}
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	seen := 0
+	for {
+		select {
+		case <-ctx.Done():
+			return seen
+		case <-ticker.C:
+			cmd := s.Client.command(ctx, "exec", s.Container, "sh", "-c", `cat "$1" 2>/dev/null`, "testease", path)
+			body, err := cmd.Output()
+			if err != nil || len(body) <= seen {
+				continue
+			}
+			n, err := into.Write(body[seen:])
+			seen += n
+			if err != nil {
+				return seen
+			}
+		}
+	}
+}
+
+type skipPrefixWriter struct {
+	skip int
+	into io.Writer
+}
+
+func (w *skipPrefixWriter) Write(p []byte) (int, error) {
+	skipped := min(w.skip, len(p))
+	w.skip -= skipped
+	if skipped == len(p) {
+		return skipped, nil
+	}
+	n, err := w.into.Write(p[skipped:])
+	return skipped + n, err
 }
 
 // scriptInterpreter returns the command a Unix probe declares in its shebang.

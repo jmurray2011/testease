@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"regexp"
 	"strings"
 
 	"github.com/jmurray2011/testease/internal/record"
@@ -70,14 +71,50 @@ func (t *tail) Last() string {
 //
 //	fact<TAB>key<TAB>value
 //	claim<TAB>text
+//	progress<TAB>key<TAB>numeric-value
 //
 // It is small and in memory on purpose: this channel carries readings, not
 // output, and a probe that writes a gigabyte of facts has a different problem.
 type structuredChannel struct {
-	buf bytes.Buffer
+	buf        bytes.Buffer
+	partial    []byte
+	onProgress func(record.ProbeProgress)
 }
 
-func (c *structuredChannel) Write(p []byte) (int, error) { return c.buf.Write(p) }
+func (c *structuredChannel) Write(p []byte) (int, error) {
+	n, err := c.buf.Write(p)
+	if c.onProgress == nil {
+		return n, err
+	}
+	p = p[:n]
+	for {
+		i := bytes.IndexByte(p, '\n')
+		if i < 0 {
+			c.partial = append(c.partial, p...)
+			break
+		}
+		line := append(c.partial, p[:i]...)
+		c.partial = nil
+		if progress, ok := parseProgressLine(strings.TrimSuffix(string(line), "\r")); ok {
+			c.onProgress(progress)
+		}
+		p = p[i+1:]
+	}
+	return n, err
+}
+
+var (
+	progressKeyShape   = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9._-]{0,63}$`)
+	progressValueShape = regexp.MustCompile(`^[0-9]{1,6}$`)
+)
+
+func parseProgressLine(line string) (record.ProbeProgress, bool) {
+	parts := strings.Split(line, "\t")
+	if len(parts) != 3 || parts[0] != "progress" || !progressKeyShape.MatchString(parts[1]) || !progressValueShape.MatchString(parts[2]) {
+		return record.ProbeProgress{}, false
+	}
+	return record.ProbeProgress{Key: parts[1], Value: parts[2]}, true
+}
 
 // parse turns the channel's lines into events. A line it cannot read becomes a
 // warning rather than a dropped reading: a probe that tried to say something
@@ -96,6 +133,13 @@ func (c *structuredChannel) parse() (facts []record.Fact, claim record.Claim, wa
 		parts := strings.Split(line, "\t")
 
 		switch parts[0] {
+		case "progress":
+			if _, ok := parseProgressLine(line); !ok {
+				warnings = append(warnings, record.Warning{
+					About: where, Message: "progress needs a short key and a numeric value", Recorded: "nothing",
+				})
+			}
+
 		case "fact":
 			if len(parts) < 3 {
 				warnings = append(warnings, record.Warning{

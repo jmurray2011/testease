@@ -616,7 +616,7 @@ func TestProbeProgressIsRecordedBeforeTheProbeFinishes(t *testing.T) {
 			operation = e.Seq
 		}
 	}
-	if !(started > 0 && started < progress && progress < fact && fact < operation) {
+	if started <= 0 || started >= progress || progress >= fact || fact >= operation {
 		t.Errorf("event order = started %d, progress %d, fact %d, operation %d", started, progress, fact, operation)
 	}
 }

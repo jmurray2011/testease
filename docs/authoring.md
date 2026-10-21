@@ -127,11 +127,20 @@ Write readings as:
 ```text
 fact<TAB>key<TAB>value
 no-reading<TAB>key<TAB>reason
+progress<TAB>key<TAB>numeric-value
 ```
 
 `no-reading` is different from a value such as `unknown`: it says the probe
 looked but could not take that reading. The judge will not treat it as a
 passing value.
+
+`progress` reports a provisional number while the probe is still running. The
+key starts with a letter and contains at most 64 letters, digits, dots,
+underscores, or hyphens; the value contains one to six digits. For example, a
+polling probe can write `printf 'progress\thttp.status\t%s\n' "$code" >&3`
+after each request. Testease records these as `probe-progress` events and shows
+the latest value on step heartbeats. They do not become facts or affect a judge;
+write a final `fact` separately when the probe has finished observing.
 
 Small starting points are in [`examples/templates`](../examples/templates/).
 

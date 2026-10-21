@@ -834,7 +834,9 @@ func (r *run) step(ctx context.Context, seq int, step scenario.Step) error {
 	// produces gigabytes never has its log read back to find one line.
 	outTail := &tail{w: stdout}
 	errTail := &tail{w: stderr}
-	structured := &structuredChannel{}
+	structured := &structuredChannel{onProgress: func(progress record.ProbeProgress) {
+		r.emit(record.KindProbeProgress, seq, progress)
+	}}
 
 	opts := target.RunOpts{
 		Env:        env(step.Env),

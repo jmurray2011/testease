@@ -27,12 +27,14 @@ type progressReporter struct {
 }
 
 type activeStep struct {
-	runID string
-	cell  string
-	step  int
-	total int
-	label string
-	since time.Time
+	runID       string
+	cell        string
+	step        int
+	total       int
+	label       string
+	since       time.Time
+	latestKey   string
+	latestValue string
 }
 
 type activeMedia struct {
@@ -61,6 +63,8 @@ type progressLine struct {
 	RC        *int    `json:"rc,omitempty"`
 	Seconds   float64 `json:"seconds,omitempty"`
 	Heartbeat bool    `json:"heartbeat,omitempty"`
+	Metric    string  `json:"metric,omitempty"`
+	Value     string  `json:"value,omitempty"`
 }
 
 func newProgressReporter(out io.Writer, mode string, heartbeat time.Duration) *progressReporter {
@@ -148,6 +152,19 @@ func (p *progressReporter) Observe(e runner.ProgressEvent) {
 			Step: e.Step, Total: e.Total, Label: started.Label, Host: started.Host,
 		})
 
+	case record.KindProbeProgress:
+		progress, ok := e.Data.(record.ProbeProgress)
+		if !ok {
+			return
+		}
+		key := progressKey(e)
+		active, ok := p.active[key]
+		if !ok {
+			return
+		}
+		active.latestKey, active.latestValue = progress.Key, progress.Value
+		p.active[key] = active
+
 	case record.KindOperation:
 		op, ok := e.Data.(record.Operation)
 		if !ok {
@@ -201,6 +218,7 @@ func (p *progressReporter) heartbeats() {
 					Event: "step-running", RunID: step.runID, Cell: step.cell,
 					Step: step.step, Total: step.total, Label: step.label,
 					Seconds: time.Since(step.since).Seconds(), Heartbeat: true,
+					Metric: step.latestKey, Value: step.latestValue,
 				})
 			}
 			for _, media := range p.media {
@@ -249,7 +267,11 @@ func (p *progressReporter) write(line progressLine) {
 	case "step-started":
 		_, _ = fmt.Fprintf(p.out, "%s%sstarting: %s\n", where, step, line.Label)
 	case "step-running":
-		_, _ = fmt.Fprintf(p.out, "%s%sstill running after %.0fs: %s\n", where, step, line.Seconds, line.Label)
+		latest := ""
+		if line.Metric != "" {
+			latest = fmt.Sprintf("; latest %s=%s", line.Metric, line.Value)
+		}
+		_, _ = fmt.Fprintf(p.out, "%s%sstill running after %.0fs: %s%s\n", where, step, line.Seconds, line.Label, latest)
 	case "step-measured":
 		_, _ = fmt.Fprintf(p.out, "%s%s%s rc=%d in %.1fs\n", where, step, line.Status, *line.RC, line.Seconds)
 	case "cell-started":

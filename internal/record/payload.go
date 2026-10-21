@@ -230,6 +230,13 @@ type StepStarted struct {
 	Control  string    `json:"control,omitempty"`
 }
 
+// ProbeProgress is a provisional numeric reading emitted while a probe runs.
+// It is recorded for visibility but is never a fact for a judge to evaluate.
+type ProbeProgress struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
 // CarryRef is the complete cross-host transfer a step requested.
 type CarryRef struct {
 	From   string `json:"from"`

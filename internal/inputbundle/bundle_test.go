@@ -4,10 +4,14 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/jmurray2011/testease/internal/scenario"
@@ -58,6 +62,60 @@ func TestAFileIsVerifiedStagedAndBoundByLogicalName(t *testing.T) {
 		if !strings.HasPrefix(mount, got.StagedPath+":") || !strings.HasSuffix(mount, ":ro") {
 			t.Errorf("bound mount = %q", mount)
 		}
+	}
+}
+
+func TestPublicObjectURLIsVerifiedStagedAndReusedFromCache(t *testing.T) {
+	var requests atomic.Int32
+	body := []byte("public RPM bytes")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		_, _ = w.Write(body)
+	}))
+	defer server.Close()
+	dir := t.TempDir()
+	descriptor := filepath.Join(dir, "inputs.yaml")
+	if err := os.WriteFile(descriptor, []byte(fmt.Sprintf(
+		"schema: 1\ninputs:\n  package: {url: %s/package.rpm, sha256: %s}\n", server.URL, sha(body),
+	)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	required := map[string]scenario.Input{"package": {Kind: "file"}}
+	first, err := LoadAndStage(descriptor, filepath.Join(dir, "runs"), required)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := os.ReadFile(first["package"].StagedPath); err != nil || string(got) != string(body) {
+		t.Fatalf("staged bytes = %q, error = %v", got, err)
+	}
+	server.Close()
+	second, err := LoadAndStage(descriptor, filepath.Join(dir, "runs"), required)
+	if err != nil {
+		t.Fatalf("cached object should work offline: %v", err)
+	}
+	if second["package"].StagedPath != first["package"].StagedPath || requests.Load() != 1 {
+		t.Fatalf("cache miss: first=%+v second=%+v requests=%d", first, second, requests.Load())
+	}
+}
+
+func TestPublicObjectURLRejectsWrongDigestAndLeavesNoCachedFile(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, "wrong bytes")
+	}))
+	defer server.Close()
+	dir := t.TempDir()
+	descriptor := filepath.Join(dir, "inputs.yaml")
+	if err := os.WriteFile(descriptor, []byte(fmt.Sprintf(
+		"schema: 1\ninputs:\n  package: {url: %s/package.rpm, sha256: %s}\n", server.URL, sha([]byte("expected bytes")),
+	)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := LoadAndStage(descriptor, filepath.Join(dir, "runs"), map[string]scenario.Input{"package": {Kind: "file"}})
+	if err == nil || !strings.Contains(err.Error(), "descriptor says") {
+		t.Fatalf("error = %v, want a digest mismatch", err)
+	}
+	if entries, err := os.ReadDir(filepath.Join(dir, "runs", ".testease-inputs")); err != nil || len(entries) != 0 {
+		t.Fatalf("cache after failed download = %v, error = %v", entries, err)
 	}
 }
 

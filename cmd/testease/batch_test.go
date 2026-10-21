@@ -122,7 +122,7 @@ func TestBatchStatusExplainsUnjudgeableChildren(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, body := range map[string]string{
-		"batch.json": `{"schema":1,"batch_id":"partial","status":"failed","tests":[{"name":"missing","scenario":"alpha","status":"skipped"}]}`,
+		"batch.json":    `{"schema":1,"batch_id":"partial","status":"failed","tests":[{"name":"missing","scenario":"alpha","status":"skipped"}]}`,
 		"judgment.json": `{"schema":1,"batch_id":"partial","status":"failed","exit_code":21,"tests":[{"name":"missing","scenario":"alpha","status":"unjudgeable","exit_code":21,"error":"child run status is skipped; no measured record to judge"}]}`,
 	} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {

@@ -67,6 +67,7 @@ tests:
 ```text
 testease batch validate smoke-set.yaml
 testease batch run smoke-set.yaml
+testease batch judge <batch-id>
 testease batch status <batch-id>
 ```
 
@@ -76,6 +77,11 @@ working directory. A test may also set `aws_profile`, `aws_region`, or
 `release_failed_targets`. The batch record and separate child logs live under
 `RUNS_DIR/batches/<batch-id>`; child run records stay in `RUNS_DIR`. Live child
 progress names its test entry. The batch exits nonzero if any child run fails.
+`batch judge` judges every measured child using its saved record's declared judge
+when present, or the normal `expect` default. It saves a separate
+`judgment.json`, continues after a failed verdict,
+and exits nonzero unless every child passes. `batch status` shows measurement
+and judgment together; `-o json` includes the saved judgment when present.
 Entry names must be distinct, including names inferred from scenarios. For a
 single scenario whose values form an axis and need one matrix verdict, use its
 matrix and `testease run --par`.

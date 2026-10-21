@@ -9,6 +9,7 @@ testease doctor <scenario> --strict
 testease run <scenario>
 testease batch validate <batch.yaml>
 testease batch run <batch.yaml>
+testease batch judge <batch-id>
 testease batch status <batch-id>
 testease judge <run-directory>
 testease render --view facts <run-directory>
@@ -17,6 +18,8 @@ testease render --view facts <run-directory>
 `validate` and `plan` are local checks. `doctor` checks the selected
 provider, images, media, and other runtime requirements. `run` writes an
 append-only record. `judge` reads that record and writes a verdict beside it.
+`batch judge` does the same for every measured child in a batch and saves a
+separate `judgment.json` summary beside `batch.json`.
 `render` only displays recorded data.
 
 For a campaign, validate the definition before running it:

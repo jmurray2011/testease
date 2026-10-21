@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -24,7 +23,7 @@ func batchCmd() *cobra.Command {
 		Args:  cobra.NoArgs,
 	}
 	cmd.Flags().StringP("output", "o", "text", "text or json")
-	cmd.AddCommand(batchValidateCmd(), batchRunCmd(), batchStatusCmd())
+	cmd.AddCommand(batchValidateCmd(), batchRunCmd(), batchJudgeCmd(), batchStatusCmd())
 	return cmd
 }
 
@@ -129,33 +128,109 @@ func batchRunCmd() *cobra.Command {
 	return cmd
 }
 
-func batchStatusCmd() *cobra.Command {
+func batchJudgeCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "status <batch-id>",
-		Short: "show the saved status of each batch test",
+		Use:   "judge <batch-id>",
+		Short: "judge every measured run in a batch and save their verdicts",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			path := filepath.Join(flagString(cmd, "runs-dir"), "batches", args[0], "batch.json")
-			body, err := os.ReadFile(path)
+			stop, err := withSignals(cmd)
 			if err != nil {
 				return err
 			}
-			var result batch.Result
-			if err := json.Unmarshal(body, &result); err != nil {
+			defer stop()
+			executable, err := os.Executable()
+			if err != nil {
+				return err
+			}
+			result, err := batch.Judge(cmd.Context(), flagString(cmd, "runs-dir"), args[0], campaign.ExecInvoker{Executable: executable})
+			if err != nil {
 				return err
 			}
 			if flagString(cmd, "output") == "json" {
-				return writeJSON(cmd, result)
+				if err := writeJSON(cmd, result); err != nil {
+					return err
+				}
+			} else {
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%d test(s)\n", result.BatchID, result.Status, len(result.Tests))
+				for _, test := range result.Tests {
+					_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  %s\t%s\n", test.Name, batchJudgmentDisplay(test))
+				}
 			}
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\n", result.ID, result.Status)
-			for _, test := range result.Tests {
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  %s\t%s\t%s\n", batchTestDisplay(test), test.Status, test.RunID)
+			if result.ExitCode != 0 {
+				return &batchExitError{ID: result.BatchID, Code: result.ExitCode}
 			}
 			return nil
 		},
 	}
 	cmd.Flags().StringP("output", "o", "text", "text or json")
 	return cmd
+}
+
+func batchStatusCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "status <batch-id>",
+		Short: "show the saved status of each batch test",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			runsDir := flagString(cmd, "runs-dir")
+			result, err := batch.LoadResult(runsDir, args[0])
+			if err != nil {
+				return err
+			}
+			judgment, err := batch.LoadJudgment(runsDir, args[0])
+			if err != nil && !os.IsNotExist(err) {
+				return err
+			}
+			hasJudgment := err == nil
+			if hasJudgment && len(judgment.Tests) != len(result.Tests) {
+				return fmt.Errorf("batch %s judgment has %d entries; measurement has %d", result.ID, len(judgment.Tests), len(result.Tests))
+			}
+			if hasJudgment {
+				for index, test := range result.Tests {
+					item := judgment.Tests[index]
+					name := test.Name
+					if name == "" {
+						name = test.Scenario
+					}
+					if item.Name != name || item.RunID != test.RunID {
+						return fmt.Errorf("batch %s judgment entry %d does not match measurement", result.ID, index+1)
+					}
+				}
+			}
+			if flagString(cmd, "output") == "json" {
+				response := struct {
+					batch.Result
+					Judgment *batch.Judgment `json:"judgment,omitempty"`
+				}{Result: result}
+				if hasJudgment {
+					response.Judgment = &judgment
+				}
+				return writeJSON(cmd, response)
+			}
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\n", result.ID, result.Status)
+			if hasJudgment {
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  judgment: %s\n", judgment.Status)
+			}
+			for index, test := range result.Tests {
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  %s\t%s\t%s\n", batchTestDisplay(test), test.Status, test.RunID)
+				if hasJudgment {
+					item := judgment.Tests[index]
+					_, _ = fmt.Fprintf(cmd.OutOrStdout(), "    %s\n", batchJudgmentDisplay(item))
+				}
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringP("output", "o", "text", "text or json")
+	return cmd
+}
+
+func batchJudgmentDisplay(test batch.TestJudgment) string {
+	if test.Error != "" {
+		return fmt.Sprintf("%s: %s", test.Status, test.Error)
+	}
+	return fmt.Sprintf("%s@%s %s (%s)", test.Judge, test.Version, test.Verdict, test.Status)
 }
 
 func batchTestDisplay(test batch.TestResult) string {

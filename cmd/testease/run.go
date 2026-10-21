@@ -258,7 +258,7 @@ func doRun(cmd *cobra.Command, args []string) error {
 		Resume:               flagString(cmd, "resume"),
 		RunID:                runID,
 		RunsDir:              runsDir,
-		Tool:                 record.ToolRef{Version: version, Commit: commit},
+		Tool:                 toolRef(),
 		Measurement:          measurement,
 		Provision:            provision,
 		Inputs:               inputs,

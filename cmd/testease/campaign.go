@@ -205,12 +205,13 @@ func doCampaignRun(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("locate testease executable: %w", err)
 	}
+	tool := toolRef()
 	result, err := campaign.Run(cmd.Context(), campaign.Options{
 		Definition: definition, RunsDir: flagString(cmd, "runs-dir"), ScenarioRoot: flagString(cmd, "scenario-root"),
 		TargetCatalog: flagString(cmd, "target-catalog"), CatalogSHA256: catalogHash,
 		TargetName: resolvedName, TargetTags: resolvedTags, SelectorName: selectorName, SelectorTags: selectorTags,
 		InputBundle: inputBundle, Keep: keep, Invoker: campaign.ExecInvoker{Executable: executable},
-		ToolVersion: version, ToolCommit: commit,
+		ToolVersion: tool.Version, ToolCommit: tool.Commit,
 		OnStart: func(id, dir string) {
 			if strings.EqualFold(flagString(cmd, "output"), "json") {
 				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "campaign %s started; follow: testease follow %s\n", id, id)

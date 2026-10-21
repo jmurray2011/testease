@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime/debug"
 	"sort"
 	"strings"
 	"syscall"
@@ -23,12 +24,42 @@ import (
 	"github.com/jmurray2011/testease/internal/runner"
 )
 
-// version is stamped at build time with -ldflags. It goes into every record,
-// so a finding can name the binary that took the measurement.
+// Makefile builds stamp these values. Other Go builds use embedded build info
+// when available, so records still identify the binary that measured them.
 var (
 	version = "dev"
 	commit  = "unknown"
 )
+
+func toolRef() record.ToolRef {
+	info, _ := debug.ReadBuildInfo()
+	return toolRefFromBuild(version, commit, info)
+}
+
+func toolRefFromBuild(stampedVersion, stampedCommit string, info *debug.BuildInfo) record.ToolRef {
+	ref := record.ToolRef{Version: stampedVersion, Commit: stampedCommit}
+	if info == nil {
+		return ref
+	}
+	if ref.Version == "dev" && info.Main.Version != "" && info.Main.Version != "(devel)" {
+		ref.Version = info.Main.Version
+	}
+	modified := false
+	for _, setting := range info.Settings {
+		switch setting.Key {
+		case "vcs.revision":
+			if ref.Commit == "unknown" && setting.Value != "" {
+				ref.Commit = setting.Value
+			}
+		case "vcs.modified":
+			modified = setting.Value == "true"
+		}
+	}
+	if stampedVersion == "dev" && modified && !strings.HasSuffix(ref.Version, "+dirty") && !strings.HasSuffix(ref.Version, "-dirty") {
+		ref.Version += "-dirty"
+	}
+	return ref
+}
 
 // Exit codes. The runner's status axis, not a verdict: nothing here says
 // whether the news was good, only how much of it was measured.
@@ -66,7 +97,7 @@ func newRoot() *cobra.Command {
 		Short:         "run scenarios and save what happened",
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		Version:       version,
+		Version:       toolRef().Version,
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 			return validateOutputFormat(cmd)
 		},

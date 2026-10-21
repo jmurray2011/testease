@@ -12,10 +12,10 @@ GOLANGCI_LINT := $(TOOLS_DIR)/golangci-lint
 GOVULNCHECK := $(TOOLS_DIR)/govulncheck
 TOOLS := $(GOFUMPT) $(GOLANGCI_LINT) $(GOVULNCHECK)
 
-# STAMPED, because the record names the binary that took the measurement and
-# an unstamped one names "dev". --dirty is not decoration: a reading taken with
-# an uncommitted binary is not reproducible from any commit, and the record has
-# to be able to say so.
+# STAMPED, because the record names the binary that took the measurement.
+# Other Go builds fall back to embedded build info. --dirty is not decoration:
+# a reading taken with an uncommitted binary is not reproducible from any
+# commit, and the record has to be able to say so.
 VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT  := $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
 STAMP   := -X main.version=$(VERSION) -X main.commit=$(COMMIT)

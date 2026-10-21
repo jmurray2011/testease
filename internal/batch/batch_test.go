@@ -143,3 +143,59 @@ tests:
 		t.Fatalf("saved result = %+v", saved)
 	}
 }
+
+type heldInvoker struct {
+	started chan string
+	release map[string]chan struct{}
+}
+
+func (i heldInvoker) Invoke(_ context.Context, stdout, _ io.Writer, args ...string) int {
+	name := args[slices.Index(args, "run")+1]
+	i.started <- name
+	<-i.release[name]
+	_, _ = fmt.Fprintf(stdout, `{"run_id":"%s-run"}`, name)
+	return 0
+}
+
+func TestBatchWaitsForStartedChildrenWhenSavingTheNextStatusFails(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "batch.yaml")
+	if err := os.WriteFile(path, []byte("schema: 1\nname: smoke\nparallel: 2\ntests:\n  - scenario: alpha\n  - scenario: bravo\n  - scenario: charlie\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	definition, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)
+	batchDir := filepath.Join(dir, "batches", "smoke-20261020T120000.000000000Z")
+	invoker := heldInvoker{started: make(chan string, 2), release: map[string]chan struct{}{
+		"alpha": make(chan struct{}), "bravo": make(chan struct{}), "charlie": make(chan struct{}),
+	}}
+	done := make(chan error, 1)
+	go func() {
+		_, runErr := Run(context.Background(), Options{Definition: definition, RunsDir: dir, ScenarioRoot: dir, Invoker: invoker, Now: func() time.Time { return now }})
+		done <- runErr
+	}()
+	for range 2 {
+		<-invoker.started
+	}
+	if err := os.RemoveAll(batchDir); err != nil {
+		t.Fatal(err)
+	}
+	close(invoker.release["alpha"])
+	select {
+	case err := <-done:
+		t.Fatalf("batch returned before bravo stopped: %v", err)
+	case <-time.After(200 * time.Millisecond):
+	}
+	close(invoker.release["bravo"])
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("lost batch record did not cause an error")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("batch did not stop after both children ended")
+	}
+}

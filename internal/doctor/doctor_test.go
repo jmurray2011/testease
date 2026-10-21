@@ -26,6 +26,19 @@ type fakeDocker struct {
 	copyErr        error
 }
 
+type materializingDocker struct {
+	fakeDocker
+	mountCalled *bool
+}
+
+func (d materializingDocker) MountType(_ context.Context, source, _ string) (string, error) {
+	*d.mountCalled = true
+	if err := os.MkdirAll(source, 0o755); err != nil {
+		return "", err
+	}
+	return "directory", nil
+}
+
 func (d fakeDocker) IsLocal(context.Context) (bool, string, error) {
 	if d.err != nil {
 		return false, "", d.err
@@ -374,6 +387,24 @@ func TestDockerMediaMustBeVisibleToTheSelectedDaemon(t *testing.T) {
 	}
 	if !strings.Contains(got.Found, "Docker daemon") {
 		t.Errorf("found = %q, want the failing boundary named", got.Found)
+	}
+}
+
+func TestMissingLocalDockerMediaFailsBeforeMountProbeCanCreateIt(t *testing.T) {
+	t.Parallel()
+	missing := filepath.Join(t.TempDir(), "missing.rpm")
+	root, name := scenarioDir(t, missing, "expect", (judge.Expect{}).Version())
+	called := false
+	r := doctor.Run(context.Background(), doctor.Options{
+		RunsDir: t.TempDir(), ScenarioRoot: root, Scenario: name,
+		Docker: materializingDocker{fakeDocker: fakeDocker{version: "29.6.2", images: map[string]bool{"neutral-base:1": true}}, mountCalled: &called},
+	})
+	got := check(t, r, "media")
+	if got.Status != doctor.Fail || !strings.Contains(got.Found, missing) {
+		t.Fatalf("media check = %+v, want missing path failure", got)
+	}
+	if called {
+		t.Fatal("mount probe ran for missing local media and could create a directory")
 	}
 }
 

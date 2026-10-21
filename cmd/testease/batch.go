@@ -23,6 +23,7 @@ func batchCmd() *cobra.Command {
 		Short: "run independent scenarios with bounded concurrency",
 		Args:  cobra.NoArgs,
 	}
+	cmd.Flags().StringP("output", "o", "text", "text or json")
 	cmd.AddCommand(batchValidateCmd(), batchRunCmd(), batchStatusCmd())
 	return cmd
 }

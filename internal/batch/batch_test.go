@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -19,6 +20,55 @@ type recordingInvoker struct {
 	most    int
 	started []string
 	args    map[string][]string
+}
+
+type progressInvoker struct{}
+
+func (progressInvoker) Invoke(_ context.Context, stdout, stderr io.Writer, args ...string) int {
+	pos := slices.Index(args, "run")
+	name := args[pos+1]
+	_, _ = fmt.Fprintln(stderr, "probe started")
+	_, _ = fmt.Fprintf(stdout, `{"run_id":"%s-run"}`, name)
+	return 0
+}
+
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf strings.Builder
+}
+
+func (b *lockedBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *lockedBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+func TestConcurrentChildProgressNamesItsScenario(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "batch.yaml")
+	if err := os.WriteFile(path, []byte("schema: 1\nname: smoke\ntests:\n  - scenario: alpha\n  - scenario: bravo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	definition, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var progress lockedBuffer
+	_, err = Run(context.Background(), Options{Definition: definition, RunsDir: dir, ScenarioRoot: dir, Invoker: progressInvoker{}, Progress: &progress})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"[alpha] probe started", "[bravo] probe started"} {
+		if !strings.Contains(progress.String(), want) {
+			t.Errorf("progress %q lacks %q", progress.String(), want)
+		}
+	}
 }
 
 func (i *recordingInvoker) Invoke(_ context.Context, stdout, _ io.Writer, args ...string) int {

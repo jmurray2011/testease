@@ -39,3 +39,18 @@ func TestToolRefKeepsExplicitStampAndMarksModifiedFallback(t *testing.T) {
 		t.Fatalf("tool ref = %+v, want linker stamp to take precedence", got)
 	}
 }
+
+func TestToolRefDoesNotDuplicateEmbeddedDirtyMarker(t *testing.T) {
+	info := &debug.BuildInfo{
+		Main: debug.Module{Version: "v0.1.1-0.20261021001703-9027d2b1c816+dirty"},
+		Settings: []debug.BuildSetting{
+			{Key: "vcs.revision", Value: "9027d2b1c81660e1f8b74a90746eee9b242c9824"},
+			{Key: "vcs.modified", Value: "true"},
+		},
+	}
+
+	got := toolRefFromBuild("dev", "unknown", info)
+	if got.Version != info.Main.Version {
+		t.Fatalf("tool version = %q, want the existing dirty marker unchanged", got.Version)
+	}
+}

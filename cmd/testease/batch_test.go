@@ -80,7 +80,7 @@ func TestBatchStatusShowsSavedVerdictsAlongsideMeasurements(t *testing.T) {
 		t.Fatal(err)
 	}
 	measurement := `{"schema":1,"batch_id":"two-variants","status":"measured","tests":[{"name":"writer","scenario":"alpha","status":"measured","run_id":"alpha-writer"},{"name":"clean","scenario":"alpha","status":"measured","run_id":"alpha-clean"}]}`
-	judgment := `{"schema":1,"batch_id":"two-variants","status":"failed","exit_code":20,"tests":[{"name":"writer","scenario":"alpha","status":"failed","verdict":"hold","judge":"expect","version":"3","exit_code":20},{"name":"clean","scenario":"alpha","status":"passed","verdict":"pass","judge":"expect","version":"3"}]}`
+	judgment := `{"schema":1,"batch_id":"two-variants","status":"failed","exit_code":20,"tests":[{"name":"writer","scenario":"alpha","run_id":"alpha-writer","status":"failed","verdict":"hold","judge":"expect","version":"3","exit_code":20},{"name":"clean","scenario":"alpha","run_id":"alpha-clean","status":"passed","verdict":"pass","judge":"expect","version":"3"}]}`
 	for name, body := range map[string]string{"batch.json": measurement, "judgment.json": judgment} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
 			t.Fatal(err)
@@ -112,6 +112,33 @@ func TestBatchJudgeCommandIsAvailable(t *testing.T) {
 	}
 	if !strings.Contains(output.String(), "judge <batch-id>") {
 		t.Fatalf("batch judge help = %q", output.String())
+	}
+}
+
+func TestBatchStatusExplainsUnjudgeableChildren(t *testing.T) {
+	runs := t.TempDir()
+	dir := filepath.Join(runs, "batches", "partial")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string]string{
+		"batch.json": `{"schema":1,"batch_id":"partial","status":"failed","tests":[{"name":"missing","scenario":"alpha","status":"skipped"}]}`,
+		"judgment.json": `{"schema":1,"batch_id":"partial","status":"failed","exit_code":21,"tests":[{"name":"missing","scenario":"alpha","status":"unjudgeable","exit_code":21,"error":"child run status is skipped; no measured record to judge"}]}`,
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	root := newRoot()
+	var output bytes.Buffer
+	root.SetOut(&output)
+	root.SetErr(&output)
+	root.SetArgs([]string{"--runs-dir", runs, "batch", "status", "partial"})
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "unjudgeable: child run status is skipped") {
+		t.Fatalf("batch status = %q", output.String())
 	}
 }
 

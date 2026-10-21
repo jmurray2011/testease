@@ -169,6 +169,7 @@ func Run(ctx context.Context, opt Options) (Result, error) {
 	var progressMu sync.Mutex
 	slots := make(chan struct{}, opt.Definition.Parallel)
 	var wg sync.WaitGroup
+	var recordErr error
 	for i, test := range opt.Definition.Tests {
 		select {
 		case <-ctx.Done():
@@ -181,10 +182,14 @@ func Run(ctx context.Context, opt Options) (Result, error) {
 		mu.Lock()
 		result.Tests[i].Status = "running"
 		err := save(dir, result)
+		if err != nil {
+			result.Tests[i].Status = "pending"
+			recordErr = errors.Join(recordErr, err)
+		}
 		mu.Unlock()
 		if err != nil {
 			<-slots
-			return result, err
+			break
 		}
 		wg.Add(1)
 		go func(i int, test Test) {
@@ -193,7 +198,9 @@ func Run(ctx context.Context, opt Options) (Result, error) {
 			child := invoke(ctx, opt, dir, test, &progressMu)
 			mu.Lock()
 			result.Tests[i] = child
-			_ = save(dir, result)
+			if err := save(dir, result); err != nil {
+				recordErr = errors.Join(recordErr, err)
+			}
 			mu.Unlock()
 		}(i, test)
 	}
@@ -213,7 +220,7 @@ func Run(ctx context.Context, opt Options) (Result, error) {
 	} else {
 		result.Status = "measured"
 	}
-	return result, save(dir, result)
+	return result, errors.Join(recordErr, save(dir, result))
 }
 
 func invoke(ctx context.Context, opt Options, dir string, test Test, progressMu *sync.Mutex) TestResult {
@@ -224,8 +231,10 @@ func invoke(ctx context.Context, opt Options, dir string, test Test, progressMu 
 		return result
 	}
 	defer func() { _ = log.Close() }()
-	args := []string{"--runs-dir", opt.RunsDir, "--scenario-root", opt.ScenarioRoot,
-		"run", test.Scenario, "--output", "json", "--progress", "plain"}
+	args := []string{
+		"--runs-dir", opt.RunsDir, "--scenario-root", opt.ScenarioRoot,
+		"run", test.Scenario, "--output", "json", "--progress", "plain",
+	}
 	for _, name := range slices.Sorted(maps.Keys(test.Params)) {
 		args = append(args, "--param", name+"="+test.Params[name])
 	}

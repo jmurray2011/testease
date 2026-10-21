@@ -9,10 +9,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 
@@ -24,9 +28,9 @@ const (
 	cacheDir = ".testease-inputs"
 )
 
-// Descriptor is a portable binding from logical input names to files. Paths
-// are relative to the descriptor unless absolute; hashes identify the bytes,
-// while paths merely say where this runner found them.
+// Descriptor binds logical input names to local files or public object URLs.
+// Local paths are relative to the descriptor unless absolute; hashes identify
+// the bytes independently of where this runner found them.
 type Descriptor struct {
 	Schema int              `yaml:"schema"`
 	Inputs map[string]Entry `yaml:"inputs"`
@@ -34,6 +38,7 @@ type Descriptor struct {
 
 type Entry struct {
 	Path      string `yaml:"path"`
+	URL       string `yaml:"url,omitempty"`
 	SHA256    string `yaml:"sha256"`
 	GitCommit string `yaml:"git_commit,omitempty"`
 }
@@ -108,8 +113,8 @@ func LoadAndStage(path, runsDir string, required map[string]scenario.Input) (map
 }
 
 func stage(base, runsDir, name, kind string, entry Entry, descriptorHash string) (Resolved, error) {
-	if entry.Path == "" {
-		return Resolved{}, fmt.Errorf("input %q has no path", name)
+	if (entry.Path == "") == (entry.URL == "") {
+		return Resolved{}, fmt.Errorf("input %q must have exactly one of path or url", name)
 	}
 	expected, err := digest(entry.SHA256)
 	if err != nil {
@@ -119,20 +124,27 @@ func stage(base, runsDir, name, kind string, entry Entry, descriptorHash string)
 		return Resolved{}, fmt.Errorf("input %q is a git-archive and has no git_commit", name)
 	}
 
-	source := entry.Path
-	if !filepath.IsAbs(source) {
-		source = filepath.Join(base, source)
-	}
-	source, err = filepath.Abs(source)
-	if err != nil {
-		return Resolved{}, fmt.Errorf("input %q path: %w", name, err)
-	}
-	info, err := os.Stat(source)
-	if err != nil {
-		return Resolved{}, fmt.Errorf("input %q at %s: %w", name, source, err)
-	}
-	if !info.Mode().IsRegular() {
-		return Resolved{}, fmt.Errorf("input %q at %s is not a regular file", name, source)
+	source := entry.URL
+	if source != "" {
+		if err := validateObjectURL(source); err != nil {
+			return Resolved{}, fmt.Errorf("input %q url: %w", name, err)
+		}
+	} else {
+		source = entry.Path
+		if !filepath.IsAbs(source) {
+			source = filepath.Join(base, source)
+		}
+		source, err = filepath.Abs(source)
+		if err != nil {
+			return Resolved{}, fmt.Errorf("input %q path: %w", name, err)
+		}
+		info, err := os.Stat(source)
+		if err != nil {
+			return Resolved{}, fmt.Errorf("input %q at %s: %w", name, source, err)
+		}
+		if !info.Mode().IsRegular() {
+			return Resolved{}, fmt.Errorf("input %q at %s is not a regular file", name, source)
+		}
 	}
 
 	dir := filepath.Join(runsDir, cacheDir)
@@ -152,9 +164,19 @@ func stage(base, runsDir, name, kind string, entry Entry, descriptorHash string)
 		if err := os.Remove(destination); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return Resolved{}, fmt.Errorf("replace corrupt cached input %q: %w", name, err)
 		}
-		if err := copyVerified(source, destination, expected); err != nil {
-			return Resolved{}, fmt.Errorf("input %q: %w", name, err)
+		var copyErr error
+		if entry.URL != "" {
+			copyErr = downloadVerified(source, destination, expected)
+		} else {
+			copyErr = copyVerified(source, destination, expected)
 		}
+		if copyErr != nil {
+			return Resolved{}, fmt.Errorf("input %q: %w", name, copyErr)
+		}
+	}
+	info, err := os.Stat(destination)
+	if err != nil {
+		return Resolved{}, fmt.Errorf("stat staged input %q: %w", name, err)
 	}
 	if kind == "git-archive" {
 		commit, err := gitArchiveCommit(destination)
@@ -170,6 +192,44 @@ func stage(base, runsDir, name, kind string, entry Entry, descriptorHash string)
 		Name: name, Kind: kind, RequestedPath: source, StagedPath: destination,
 		SHA256: expected, GitCommit: entry.GitCommit, Size: info.Size(), DescriptorHash: descriptorHash,
 	}, nil
+}
+
+func validateObjectURL(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return err
+	}
+	if u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Opaque != "" {
+		return fmt.Errorf("use a public object URL without credentials, query, or fragment")
+	}
+	if u.Scheme == "https" {
+		return nil
+	}
+	if u.Scheme == "http" && (u.Hostname() == "localhost" || net.ParseIP(u.Hostname()).IsLoopback()) {
+		return nil
+	}
+	return fmt.Errorf("use an HTTPS object URL (HTTP is allowed only for localhost)")
+}
+
+func downloadVerified(source, destination, expected string) error {
+	client := &http.Client{
+		Timeout: 30 * time.Minute,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 10 {
+				return fmt.Errorf("too many redirects")
+			}
+			return validateObjectURL(req.URL.String())
+		},
+	}
+	response, err := client.Get(source)
+	if err != nil {
+		return fmt.Errorf("download %s: %w", source, err)
+	}
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode != http.StatusOK {
+		return fmt.Errorf("download %s: %s", source, response.Status)
+	}
+	return copyVerifiedReader(response.Body, destination, expected)
 }
 
 func digest(raw string) (string, error) {
@@ -188,7 +248,10 @@ func copyVerified(source, destination, expected string) error {
 		return err
 	}
 	defer func() { _ = in.Close() }()
+	return copyVerifiedReader(in, destination, expected)
+}
 
+func copyVerifiedReader(in io.Reader, destination, expected string) error {
 	tmp, err := os.CreateTemp(filepath.Dir(destination), ".input-*")
 	if err != nil {
 		return err

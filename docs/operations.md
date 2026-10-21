@@ -410,7 +410,11 @@ scenario names them and mounts them by logical name:
 
 One descriptor binds those names for a run. Paths are relative to the
 descriptor; SHA-256 identifies the bytes, and a Git archive also pins its
-embedded commit marker:
+embedded commit marker. A public object can instead use `url` with an HTTPS
+address, including a public S3 object URL. The same SHA-256 check applies,
+and a verified cached copy under the runs directory can be reused offline.
+`path` and `url` are mutually exclusive; URLs cannot contain credentials or
+query strings. HTTP is accepted only for localhost object stores:
 
     schema: 1
     inputs:
@@ -420,6 +424,9 @@ embedded commit marker:
         git_commit: 0123456789abcdef...
       license:
         path: license.json
+        sha256: sha256:...
+      public-rpm:
+        url: https://example-bucket.s3.amazonaws.com/public/package.rpm
         sha256: sha256:...
 
     testease doctor my-scenario --input-bundle /staging/inputs.yaml

@@ -2,11 +2,64 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+
+	"github.com/jmurray2011/testease/internal/batch"
 )
+
+type failingBatchDoctor struct {
+	calls [][]string
+}
+
+func (i *failingBatchDoctor) Invoke(_ context.Context, stdout, _ io.Writer, args ...string) int {
+	i.calls = append(i.calls, slices.Clone(args))
+	if slices.Contains(args, "doctor") {
+		_, _ = io.WriteString(stdout, `{"checks":[{"name":"inputs","status":"fail","found":"missing bundle"}]}`)
+		return 3
+	}
+	return 10
+}
+
+func TestBatchRunPreflightsBeforeCreatingARecordOrStartingChildren(t *testing.T) {
+	runs := t.TempDir()
+	invoker := &failingBatchDoctor{}
+	definition := &batch.Definition{Name: "blocked", Tests: []batch.Test{{Scenario: "alpha"}, {Scenario: "bravo"}}}
+	_, preflight, err := executeBatch(context.Background(), batch.Options{Definition: definition, RunsDir: runs, ScenarioRoot: "/scenarios", Invoker: invoker})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preflight.Status != "failed" || len(preflight.Tests) != 2 || len(invoker.calls) != 2 {
+		t.Fatalf("preflight = %+v, calls = %v", preflight, invoker.calls)
+	}
+	for _, call := range invoker.calls {
+		if !slices.Contains(call, "doctor") || !slices.Contains(call, "--strict") {
+			t.Errorf("batch started or omitted strict doctor: %v", call)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(runs, "batches")); !os.IsNotExist(err) {
+		t.Fatalf("batch record was created before preflight passed: %v", err)
+	}
+}
+
+func TestBatchDoctorCommandIsAvailable(t *testing.T) {
+	root := newRoot()
+	var output bytes.Buffer
+	root.SetOut(&output)
+	root.SetErr(&output)
+	root.SetArgs([]string{"batch", "doctor", "--help"})
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "doctor <batch.yaml>") {
+		t.Fatalf("batch doctor help = %q", output.String())
+	}
+}
 
 func TestBatchValidateChecksEveryScenarioBeforeProvisioning(t *testing.T) {
 	rootDir := t.TempDir()

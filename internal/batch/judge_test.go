@@ -85,3 +85,25 @@ func TestJudgeAggregatesEachMeasuredChildAndSavesSeparateSummary(t *testing.T) {
 		t.Fatalf("measurement was changed: %+v", unchanged)
 	}
 }
+
+func TestJudgeKeepsDistinctLogsForOlderUnnamedBatchEntries(t *testing.T) {
+	runs := t.TempDir()
+	id := "old-batch"
+	dir := filepath.Join(runs, "batches", id)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := save(dir, Result{Schema: Schema, ID: id, Status: "measured", Tests: []TestResult{
+		{Scenario: "alpha", RunID: "alpha-run", Status: "measured"},
+		{Scenario: "bravo", RunID: "bravo-run", Status: "measured"},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Judge(context.Background(), runs, id, &judgeInvoker{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Tests[0].Log != "alpha.judge.log" || got.Tests[1].Log != "bravo.judge.log" {
+		t.Fatalf("legacy child logs = %q and %q", got.Tests[0].Log, got.Tests[1].Log)
+	}
+}

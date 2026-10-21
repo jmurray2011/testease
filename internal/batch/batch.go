@@ -166,6 +166,7 @@ func Run(ctx context.Context, opt Options) (Result, error) {
 		return result, err
 	}
 	var mu sync.Mutex
+	var progressMu sync.Mutex
 	slots := make(chan struct{}, opt.Definition.Parallel)
 	var wg sync.WaitGroup
 	for i, test := range opt.Definition.Tests {
@@ -189,7 +190,7 @@ func Run(ctx context.Context, opt Options) (Result, error) {
 		go func(i int, test Test) {
 			defer wg.Done()
 			defer func() { <-slots }()
-			child := invoke(ctx, opt, dir, test)
+			child := invoke(ctx, opt, dir, test, &progressMu)
 			mu.Lock()
 			result.Tests[i] = child
 			_ = save(dir, result)
@@ -215,7 +216,7 @@ func Run(ctx context.Context, opt Options) (Result, error) {
 	return result, save(dir, result)
 }
 
-func invoke(ctx context.Context, opt Options, dir string, test Test) TestResult {
+func invoke(ctx context.Context, opt Options, dir string, test Test, progressMu *sync.Mutex) TestResult {
 	result := TestResult{Scenario: test.Scenario, Status: "failed", Log: test.Scenario + ".log"}
 	log, err := os.Create(filepath.Join(dir, result.Log))
 	if err != nil {
@@ -249,7 +250,9 @@ func invoke(ctx context.Context, opt Options, dir string, test Test) TestResult 
 	var stdout bytes.Buffer
 	stderr := io.Writer(log)
 	if opt.Progress != nil {
-		stderr = io.MultiWriter(log, opt.Progress)
+		progress := &namedProgress{out: opt.Progress, mu: progressMu, name: test.Scenario}
+		defer progress.flush()
+		stderr = io.MultiWriter(log, progress)
 	}
 	result.ExitCode = opt.Invoker.Invoke(ctx, &stdout, stderr, args...)
 	_, _ = log.Write(stdout.Bytes())
@@ -268,6 +271,42 @@ func invoke(ctx context.Context, opt Options, dir string, test Test) TestResult 
 		result.Status = "interrupted"
 	}
 	return result
+}
+
+type namedProgress struct {
+	out     io.Writer
+	mu      *sync.Mutex
+	name    string
+	pending []byte
+}
+
+func (p *namedProgress) Write(data []byte) (int, error) {
+	p.pending = append(p.pending, data...)
+	for {
+		index := bytes.IndexByte(p.pending, '\n')
+		if index < 0 {
+			break
+		}
+		if err := p.line(p.pending[:index+1]); err != nil {
+			return 0, err
+		}
+		p.pending = p.pending[index+1:]
+	}
+	return len(data), nil
+}
+
+func (p *namedProgress) flush() {
+	if len(p.pending) > 0 {
+		_ = p.line(p.pending)
+		p.pending = nil
+	}
+}
+
+func (p *namedProgress) line(line []byte) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	_, err := fmt.Fprintf(p.out, "[%s] %s", p.name, line)
+	return err
 }
 
 func save(dir string, result Result) error {

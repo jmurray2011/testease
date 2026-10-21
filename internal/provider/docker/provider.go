@@ -6,6 +6,7 @@ package docker
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
@@ -392,9 +393,9 @@ func identityProbe(container, osName string) []string {
 // census would ask for the same container, and the second would either collide
 // or, worse, measure the first one's machine.
 //
-// The run id is trimmed rather than the cell or host when the name is too long,
-// because those are what tell two live targets apart. Ownership stays readable
-// from the labels either way, which is what reap trusts.
+// Long names keep a digest of the full identity, so differences at the end of
+// batch run IDs survive truncation. Ownership remains in labels, which is what
+// reap trusts.
 // network is the cell's own network, created on first use. Hosts on it resolve
 // each other by the name the scenario gave them.
 func (p *Provider) network(ctx context.Context, spec target.Spec) (string, error) {
@@ -422,25 +423,11 @@ func (p *Provider) network(ctx context.Context, spec target.Spec) (string, error
 // docker would accept the duplicates and answer either, and a probe would reach
 // another cell's machine with nothing reporting an error.
 func networkName(runID, cell string) string {
-	tail := unsafeName.ReplaceAllString(cell, "-")
-	prefix := unsafeName.ReplaceAllString("testease-net-"+runID, "-")
-
-	const limit = 60
-	if tail == "" {
-		if len(prefix) > limit {
-			return prefix[:limit]
-		}
-		return prefix
+	name := "testease-net-" + runID
+	if cell != "" {
+		name += "-" + cell
 	}
-	// The run id is trimmed rather than the cell, for the same reason the
-	// container name trims it: the cell is what tells two live networks apart.
-	if room := limit - len(tail) - 1; len(prefix) > room {
-		if room < 1 {
-			return tail[max(0, len(tail)-limit):]
-		}
-		prefix = prefix[:room]
-	}
-	return prefix + "-" + tail
+	return boundedDockerName(name)
 }
 
 func containerName(runID, cell, host string) string {
@@ -448,17 +435,20 @@ func containerName(runID, cell, host string) string {
 	if cell != "" {
 		tail = cell + "-" + host
 	}
-	tail = unsafeName.ReplaceAllString(tail, "-")
+	return boundedDockerName("testease-" + runID + "-" + tail)
+}
 
+func boundedDockerName(full string) string {
+	name := unsafeName.ReplaceAllString(full, "-")
 	const limit = 60
-	prefix := unsafeName.ReplaceAllString("testease-"+runID, "-")
-	if room := limit - len(tail) - 1; len(prefix) > room {
-		if room < 1 {
-			return tail[max(0, len(tail)-limit):]
-		}
-		prefix = prefix[:room]
+	if len(name) <= limit {
+		return name
 	}
-	return prefix + "-" + tail
+	digest := sha256.Sum256([]byte(full))
+	const hashBytes = 12
+	const tailLength = 16
+	headLength := limit - hashBytes*2 - tailLength - 2
+	return name[:headLength] + "-" + fmt.Sprintf("%x", digest[:hashBytes]) + "-" + name[len(name)-tailLength:]
 }
 
 // --- the target -----------------------------------------------------------

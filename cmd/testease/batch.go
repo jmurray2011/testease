@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"maps"
@@ -23,7 +24,7 @@ func batchCmd() *cobra.Command {
 		Args:  cobra.NoArgs,
 	}
 	cmd.Flags().StringP("output", "o", "text", "text or json")
-	cmd.AddCommand(batchValidateCmd(), batchRunCmd(), batchJudgeCmd(), batchStatusCmd())
+	cmd.AddCommand(batchValidateCmd(), batchDoctorCmd(), batchRunCmd(), batchJudgeCmd(), batchStatusCmd())
 	return cmd
 }
 
@@ -100,13 +101,19 @@ func batchRunCmd() *cobra.Command {
 				return err
 			}
 			tool := toolRef()
-			result, err := batch.Run(cmd.Context(), batch.Options{
+			result, preflight, err := executeBatch(cmd.Context(), batch.Options{
 				Definition: definition, RunsDir: flagString(cmd, "runs-dir"),
 				ScenarioRoot: flagString(cmd, "scenario-root"), Invoker: campaign.ExecInvoker{Executable: executable},
 				Progress: cmd.ErrOrStderr(), ToolVersion: tool.Version, ToolCommit: tool.Commit,
 			})
 			if err != nil {
 				return err
+			}
+			if preflight.Status != "passed" {
+				if err := reportBatchPreflight(cmd, preflight); err != nil {
+					return err
+				}
+				return &runner.PreconditionError{Message: "batch doctor failed", Remedy: "fix the reported checks before running the batch"}
 			}
 			if flagString(cmd, "output") == "json" {
 				if err := writeJSON(cmd, result); err != nil {
@@ -126,6 +133,79 @@ func batchRunCmd() *cobra.Command {
 	}
 	cmd.Flags().StringP("output", "o", "text", "text or json")
 	return cmd
+}
+
+// executeBatch keeps the strict preflight before batch.Run, which creates the
+// batch record and schedules children. It accepts an invoker so the ordering
+// can be verified without starting targets.
+func executeBatch(ctx context.Context, opt batch.Options) (batch.Result, batch.PreflightResult, error) {
+	preflight := batch.Preflight(ctx, opt, true)
+	if preflight.Status != "passed" {
+		return batch.Result{}, preflight, nil
+	}
+	result, err := batch.Run(ctx, opt)
+	return result, preflight, err
+}
+
+func batchDoctorCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "doctor <batch.yaml>",
+		Short: "check every batch entry before starting targets",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			stop, err := withSignals(cmd)
+			if err != nil {
+				return err
+			}
+			defer stop()
+			definition, err := batch.Load(args[0])
+			if err != nil {
+				return &runner.PreconditionError{Message: err.Error()}
+			}
+			if err := validateBatch(definition, flagString(cmd, "scenario-root")); err != nil {
+				return &runner.PreconditionError{Message: err.Error()}
+			}
+			executable, err := os.Executable()
+			if err != nil {
+				return err
+			}
+			strict, _ := cmd.Flags().GetBool("strict")
+			result := batch.Preflight(cmd.Context(), batch.Options{
+				Definition: definition, RunsDir: flagString(cmd, "runs-dir"),
+				ScenarioRoot: flagString(cmd, "scenario-root"), Invoker: campaign.ExecInvoker{Executable: executable},
+			}, strict)
+			if err := reportBatchPreflight(cmd, result); err != nil {
+				return err
+			}
+			if result.Status != "passed" {
+				return &runner.PreconditionError{Message: "batch doctor failed", Remedy: "fix the reported checks before running the batch"}
+			}
+			return nil
+		},
+	}
+	cmd.Flags().Bool("strict", false, "count a warning as a failure")
+	cmd.Flags().StringP("output", "o", "text", "text or json")
+	return cmd
+}
+
+func reportBatchPreflight(cmd *cobra.Command, result batch.PreflightResult) error {
+	if flagString(cmd, "output") == "json" {
+		return writeJSON(cmd, result)
+	}
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "%s\t%s\t%d test(s)\n", result.Batch, result.Status, len(result.Tests))
+	for _, test := range result.Tests {
+		_, _ = fmt.Fprintf(cmd.OutOrStdout(), "  %s (%s)\t%s\n", test.Name, test.Scenario, test.Status)
+		for _, check := range test.Checks {
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "    %s\t%s\t%s\n", check.Status, check.Name, check.Found)
+			if check.Remedy != "" && check.Status != "ok" {
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "      try: %s\n", check.Remedy)
+			}
+		}
+		if test.Error != "" {
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "    error: %s\n", test.Error)
+		}
+	}
+	return nil
 }
 
 func batchJudgeCmd() *cobra.Command {

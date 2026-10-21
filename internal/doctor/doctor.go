@@ -68,6 +68,10 @@ type Docker interface {
 	ReadMount(ctx context.Context, source, image string) ([]byte, error)
 	MountType(ctx context.Context, source, image string) (string, error)
 	CopyRoundTrip(ctx context.Context, image string) error
+	// HostPathLocal says whether a bind source must exist on this machine
+	// before asking Docker to mount it. Some local socket integrations create
+	// a missing source as an empty directory during the mount probe.
+	HostPathLocal(ctx context.Context) (bool, error)
 
 	// IsLocal answers whether this daemon runs on the machine doctor is
 	// running on, and names the machine it found. The name is for the report:
@@ -447,6 +451,9 @@ func media(ctx context.Context, plan *scenario.Plan, docker Docker, ssmTransferS
 
 	var missing, found []string
 	seen := map[string]bool{}
+	localPathsChecked := false
+	localPaths := false
+	var localPathsErr error
 	for _, host := range slices.Sorted(maps.Keys(plan.Hosts)) {
 		for _, item := range plan.Hosts[host].Media {
 			// The manifest's own parser, not a split on the first colon: a
@@ -463,6 +470,20 @@ func media(ctx context.Context, plan *scenario.Plan, docker Docker, ssmTransferS
 				continue
 			}
 			if plan.Hosts[host].Provider == "docker" && docker != nil {
+				if !localPathsChecked {
+					localPaths, localPathsErr = docker.HostPathLocal(ctx)
+					localPathsChecked = true
+				}
+				if localPathsErr != nil {
+					missing = append(missing, fmt.Sprintf("host %s: cannot check Docker media host paths: %v", host, localPathsErr))
+					continue
+				}
+				if localPaths {
+					if _, err := os.Stat(src); err != nil {
+						missing = append(missing, fmt.Sprintf("host %s: %s is missing on this machine: %v", host, src, err))
+						continue
+					}
+				}
 				kind, err := docker.MountType(ctx, src, plan.Hosts[host].Image)
 				if err != nil {
 					missing = append(missing, fmt.Sprintf("host %s on its Docker daemon: %s (%v)", host, src, err))

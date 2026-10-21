@@ -252,24 +252,7 @@ func invoke(ctx context.Context, opt Options, dir string, test Test, suffix stri
 		"--runs-dir", opt.RunsDir, "--scenario-root", opt.ScenarioRoot,
 		"run", test.Scenario, "--output", "json", "--progress", "plain", "--run-suffix", suffix,
 	}
-	for _, name := range slices.Sorted(maps.Keys(test.Params)) {
-		args = append(args, "--param", name+"="+test.Params[name])
-	}
-	if test.Target != "" {
-		args = append(args, "--target", test.Target)
-	}
-	if test.TargetCatalog != "" {
-		args = append(args, "--target-catalog", test.TargetCatalog)
-	}
-	if test.InputBundle != "" {
-		args = append(args, "--input-bundle", test.InputBundle)
-	}
-	if test.AWSProfile != "" {
-		args = append(args, "--aws-profile", test.AWSProfile)
-	}
-	if test.AWSRegion != "" {
-		args = append(args, "--aws-region", test.AWSRegion)
-	}
+	args = append(args, entryArgs(test)...)
 	if test.ReleaseFailedTargets {
 		args = append(args, "--release-failed-targets")
 	}
@@ -297,6 +280,29 @@ func invoke(ctx context.Context, opt Options, dir string, test Test, suffix stri
 		result.Status = "interrupted"
 	}
 	return result
+}
+
+func entryArgs(test Test) []string {
+	var args []string
+	for _, name := range slices.Sorted(maps.Keys(test.Params)) {
+		args = append(args, "--param", name+"="+test.Params[name])
+	}
+	if test.Target != "" {
+		args = append(args, "--target", test.Target)
+	}
+	if test.TargetCatalog != "" {
+		args = append(args, "--target-catalog", test.TargetCatalog)
+	}
+	if test.InputBundle != "" {
+		args = append(args, "--input-bundle", test.InputBundle)
+	}
+	if test.AWSProfile != "" {
+		args = append(args, "--aws-profile", test.AWSProfile)
+	}
+	if test.AWSRegion != "" {
+		args = append(args, "--aws-region", test.AWSRegion)
+	}
+	return args
 }
 
 type namedProgress struct {

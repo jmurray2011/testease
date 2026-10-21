@@ -31,6 +31,12 @@ type materializingDocker struct {
 	mountCalled *bool
 }
 
+type remoteMediaDocker struct{ fakeDocker }
+
+func (remoteMediaDocker) MountType(context.Context, string, string) (string, error) {
+	return "directory", nil
+}
+
 func (d materializingDocker) MountType(_ context.Context, source, _ string) (string, error) {
 	*d.mountCalled = true
 	if err := os.MkdirAll(source, 0o755); err != nil {
@@ -47,6 +53,13 @@ func (d fakeDocker) IsLocal(context.Context) (bool, string, error) {
 		return false, d.elsewhere, nil
 	}
 	return true, "here", nil
+}
+
+func (d fakeDocker) HostPathLocal(context.Context) (bool, error) {
+	if d.err != nil {
+		return false, d.err
+	}
+	return d.elsewhere == "", nil
 }
 
 func (d fakeDocker) ServerVersion(context.Context) (string, error) {
@@ -405,6 +418,19 @@ func TestMissingLocalDockerMediaFailsBeforeMountProbeCanCreateIt(t *testing.T) {
 	}
 	if called {
 		t.Fatal("mount probe ran for missing local media and could create a directory")
+	}
+}
+
+func TestRemoteDockerMediaMayExistOnlyOnTheDaemon(t *testing.T) {
+	t.Parallel()
+	remoteOnly := filepath.Join(t.TempDir(), "remote-store")
+	root, name := scenarioDir(t, remoteOnly, "expect", (judge.Expect{}).Version())
+	r := doctor.Run(context.Background(), doctor.Options{
+		RunsDir: t.TempDir(), ScenarioRoot: root, Scenario: name,
+		Docker: remoteMediaDocker{fakeDocker{version: "29.6.2", images: map[string]bool{"neutral-base:1": true}, elsewhere: "remote-daemon"}},
+	})
+	if got := check(t, r, "media"); got.Status != doctor.OK {
+		t.Fatalf("remote media check = %+v", got)
 	}
 }
 

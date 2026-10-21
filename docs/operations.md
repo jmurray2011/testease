@@ -66,14 +66,19 @@ tests:
 
 ```text
 testease batch validate smoke-set.yaml
+testease batch doctor smoke-set.yaml --strict
 testease batch run smoke-set.yaml
 testease batch judge <batch-id>
 testease batch status <batch-id>
 ```
 
-Validation checks every scenario and selected catalog target before starting
-any run. Catalog and input bundle paths in the file are relative to the current
-working directory. A test may also set `aws_profile`, `aws_region`, or
+Validation checks every scenario and selected catalog target without checking
+runtime requirements. `batch doctor` checks every entry's images, media, input
+bundle, and provider prerequisites, reporting all entries even when one fails.
+`batch run` performs strict preflight before creating a batch record or starting
+any child. Catalog and input bundle paths in the file are relative to the current
+working directory. Docker media bind sources must be absolute host paths after
+scenario parameters resolve. A test may also set `aws_profile`, `aws_region`, or
 `release_failed_targets`. The batch record and separate child logs live under
 `RUNS_DIR/batches/<batch-id>`; child run records stay in `RUNS_DIR`. Live child
 progress names its test entry. The batch exits nonzero if any child run fails.
@@ -348,6 +353,9 @@ rejects a path that exists only here and the empty directory Docker's `-v`
 shorthand otherwise creates for a missing remote file. Scenario-specific
 bootstrap scripts belong beside the scenario so the cache contents and hashes
 are reproducible rather than assumed.
+For a local Docker socket, doctor checks that the source exists on this machine
+before mounting it, since some socket integrations create missing bind sources
+as empty directories even with `--mount`.
 
 ## Carry steps
 

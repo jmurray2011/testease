@@ -8,6 +8,7 @@ testease plan <scenario>
 testease doctor <scenario> --strict
 testease run <scenario>
 testease batch validate <batch.yaml>
+testease batch doctor <batch.yaml> --strict
 testease batch run <batch.yaml>
 testease batch judge <batch-id>
 testease batch status <batch-id>
@@ -20,6 +21,9 @@ provider, images, media, and other runtime requirements. `run` writes an
 append-only record. `judge` reads that record and writes a verdict beside it.
 `batch judge` does the same for every measured child in a batch and saves a
 separate `judgment.json` summary beside `batch.json`.
+`batch doctor` checks every entry with its own parameters, target and input
+bundle. `batch run` performs the strict form before creating a batch record or
+starting any child runs.
 `render` only displays recorded data.
 
 For a campaign, validate the definition before running it:

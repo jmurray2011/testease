@@ -313,6 +313,15 @@ func (d dockerDaemon) IsLocal(ctx context.Context) (bool, string, error) {
 	return daemonIsLocal(ctx, d.client)
 }
 
+func (d dockerDaemon) HostPathLocal(ctx context.Context) (bool, error) {
+	endpoint, err := d.client.Output(ctx, "context", "inspect", "--format", "{{.Endpoints.docker.Host}}")
+	if err != nil {
+		return false, err
+	}
+	endpoint = strings.TrimSpace(endpoint)
+	return strings.HasPrefix(endpoint, "unix://") || strings.HasPrefix(endpoint, "npipe://"), nil
+}
+
 func dockerFor(cmd *cobra.Command) doctor.Docker {
 	return dockerDaemon{client: backend.Client{Context: flagString(cmd, "docker-context")}}
 }

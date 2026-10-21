@@ -48,6 +48,25 @@ func TestProgressHeartbeatNamesTheStillRunningStep(t *testing.T) {
 	}
 }
 
+func TestProgressHeartbeatShowsLatestNumericProbeReading(t *testing.T) {
+	var out bytes.Buffer
+	p := newProgressReporter(&out, "plain", 5*time.Millisecond)
+	p.Observe(runner.ProgressEvent{
+		RunID: "run-1", Kind: record.KindStepStarted, Step: 1, Total: 1,
+		Data: record.StepStarted{Label: "wait for Docs", Host: "app"},
+	})
+	p.Observe(runner.ProgressEvent{
+		RunID: "run-1", Kind: record.KindProbeProgress, Step: 1, Total: 1,
+		Data: record.ProbeProgress{Key: "http.status", Value: "404"},
+	})
+	time.Sleep(20 * time.Millisecond)
+	p.Close()
+
+	if got := out.String(); !strings.Contains(got, "still running") || !strings.Contains(got, "http.status=404") {
+		t.Errorf("progress = %q, want the latest HTTP status on the heartbeat", got)
+	}
+}
+
 func TestProgressShowsAndKeepsAliveADeclaredMediaTransfer(t *testing.T) {
 	var out bytes.Buffer
 	p := newProgressReporter(&out, "plain", 5*time.Millisecond)

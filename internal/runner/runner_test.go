@@ -568,6 +568,59 @@ func TestProgressIsObservedOnlyAfterItsEventWasWritten(t *testing.T) {
 	}
 }
 
+func TestProbeProgressIsRecordedBeforeTheProbeFinishes(t *testing.T) {
+	t.Parallel()
+
+	p := plan(t, oneStep)
+	runsDir := t.TempDir()
+	runID := "one-step-20261021T000000Z"
+	var observedDuringProbe bool
+	tgt := &fakeTarget{session: &fakeSession{run: func(_ []byte, _ []string, opt target.RunOpts) (target.Result, error) {
+		if _, err := io.WriteString(opt.Structured, "progress\thttp.status\t404\n"); err != nil {
+			return target.Result{}, err
+		}
+		body, err := os.ReadFile(filepath.Join(runsDir, runID, record.EventsFile))
+		if err != nil {
+			return target.Result{}, err
+		}
+		observedDuringProbe = bytes.Contains(body, []byte(`"kind":"probe-progress"`))
+		_, _ = io.WriteString(opt.Structured, "fact\thttp.final\t404\n")
+		return target.Result{RC: 0}, nil
+	}}}
+
+	out, err := runner.Run(context.Background(), runner.Options{
+		Plan: p, RunsDir: runsDir, RunID: runID,
+		Tool:      record.ToolRef{Version: "0.0.0-test"},
+		Providers: map[string]target.Provider{"fake": &fakeProvider{target: tgt}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !observedDuringProbe {
+		t.Error("probe progress was not recorded while the probe was still running")
+	}
+	rec, err := record.Read(out.Dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var started, progress, fact, operation int
+	for _, e := range rec.Events {
+		switch e.Kind {
+		case record.KindStepStarted:
+			started = e.Seq
+		case record.Kind("probe-progress"):
+			progress = e.Seq
+		case record.KindFact:
+			fact = e.Seq
+		case record.KindOperation:
+			operation = e.Seq
+		}
+	}
+	if !(started > 0 && started < progress && progress < fact && fact < operation) {
+		t.Errorf("event order = started %d, progress %d, fact %d, operation %d", started, progress, fact, operation)
+	}
+}
+
 func TestTargetIdentityIsRecordedInThreeLayers(t *testing.T) {
 	t.Parallel()
 

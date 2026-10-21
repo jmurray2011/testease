@@ -145,10 +145,12 @@ tests:
 }
 
 type variantInvoker struct {
-	mu     sync.Mutex
-	active int
-	most   int
-	calls  map[string][]string
+	mu      sync.Mutex
+	active  int
+	most    int
+	calls   map[string][]string
+	started chan struct{}
+	release chan struct{}
 }
 
 func (i *variantInvoker) Invoke(_ context.Context, stdout, stderr io.Writer, args ...string) int {
@@ -164,7 +166,8 @@ func (i *variantInvoker) Invoke(_ context.Context, stdout, stderr io.Writer, arg
 	i.calls[variant] = slices.Clone(args)
 	i.mu.Unlock()
 	_, _ = fmt.Fprintln(stderr, "probe started")
-	time.Sleep(30 * time.Millisecond)
+	i.started <- struct{}{}
+	<-i.release
 	_, _ = fmt.Fprintf(stdout, `{"run_id":"alpha-20261020T120000Z-%s"}`, args[suffixAt+1])
 	i.mu.Lock()
 	i.active--
@@ -197,15 +200,35 @@ tests:
 	if err != nil {
 		t.Fatalf("load named variants: %v", err)
 	}
-	invoker := &variantInvoker{calls: map[string][]string{}}
+	invoker := &variantInvoker{calls: map[string][]string{}, started: make(chan struct{}, 2), release: make(chan struct{})}
 	var progress lockedBuffer
-	result, err := Run(context.Background(), Options{
-		Definition: loaded, RunsDir: dir, ScenarioRoot: "/scenarios", Invoker: invoker,
-		Progress: &progress, Now: func() time.Time { return time.Date(2026, 10, 20, 12, 0, 0, 123, time.UTC) },
-	})
-	if err != nil {
-		t.Fatal(err)
+	type outcome struct {
+		result Result
+		err    error
 	}
+	done := make(chan outcome, 1)
+	go func() {
+		result, err := Run(context.Background(), Options{
+			Definition: loaded, RunsDir: dir, ScenarioRoot: "/scenarios", Invoker: invoker,
+			Progress: &progress, Now: func() time.Time { return time.Date(2026, 10, 20, 12, 0, 0, 123, time.UTC) },
+		})
+		done <- outcome{result, err}
+	}()
+	for range 2 {
+		select {
+		case <-invoker.started:
+		case <-time.After(2 * time.Second):
+			close(invoker.release)
+			<-done
+			t.Fatal("both named variants did not start together")
+		}
+	}
+	close(invoker.release)
+	finished := <-done
+	if finished.err != nil {
+		t.Fatal(finished.err)
+	}
+	result := finished.result
 	if invoker.most != 2 || len(invoker.calls) != 2 {
 		t.Fatalf("maximum live = %d, calls = %v; want both variants live", invoker.most, invoker.calls)
 	}

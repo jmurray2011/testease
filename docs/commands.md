@@ -7,6 +7,9 @@ testease validate <scenario>
 testease plan <scenario>
 testease doctor <scenario> --strict
 testease run <scenario>
+testease batch validate <batch.yaml>
+testease batch run <batch.yaml>
+testease batch status <batch-id>
 testease judge <run-directory>
 testease render --view facts <run-directory>
 ```

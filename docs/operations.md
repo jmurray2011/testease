@@ -31,6 +31,51 @@ is named; Testease never silently chooses the first machine. The selected name,
 full tag set, selector, and catalog SHA-256 are recorded. Tags describe intended
 capability, while probes still measure what the target actually is.
 
+## Independent scenario batches
+
+A batch lists scenarios that can run independently. Its `parallel` value bounds
+the number of scenario runs in flight. When omitted, all listed scenarios may
+start together. Each run gets its own record and target lifecycle; a failure in
+one does not suppress the others.
+
+```yaml
+schema: 1
+name: smoke-set
+parallel: 3
+tests:
+  - scenario: install-check
+    target: vm-lane
+    target_catalog: private-targets.yaml
+    params: {version: "1.2.3"}
+  - scenario: api-check
+    target: container-lane
+    target_catalog: private-targets.yaml
+  - scenario: upgrade-check
+    target: second-vm-lane
+    target_catalog: private-targets.yaml
+    input_bundle: private-inputs.yaml
+```
+
+```text
+testease batch validate smoke-set.yaml
+testease batch run smoke-set.yaml
+testease batch status <batch-id>
+```
+
+Validation checks every scenario and selected catalog target before starting
+any run. Catalog and input bundle paths in the file are relative to the current
+working directory. A test may also set `aws_profile`, `aws_region`, or
+`release_failed_targets`. The batch record and separate child logs live under
+`RUNS_DIR/batches/<batch-id>`; child run records stay in `RUNS_DIR`. Live child
+progress names its scenario. The batch exits nonzero if any child run fails.
+Names in `tests` must be distinct because simultaneous runs of the same
+scenario can otherwise ask for the same run ID. For one scenario swept across
+many values, use its matrix and `testease run --par`.
+
+`parallel` counts scenarios. A scenario with several hosts can have several
+targets live; each child matrix runs one cell at a time. Plan AWS capacity
+using the total target count.
+
 ## Provisioning EC2 and ECS targets
 
 A scenario selects a provider and image. Keep the scenario independent of the

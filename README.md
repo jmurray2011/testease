@@ -67,6 +67,11 @@ Testease runs scenarios and writes records. Your CI system can handle machine
 allocation, scheduling, and publishing. The same commands work from a terminal
 or from a job.
 
+To run several independent scenarios at once, list them in a batch file and
+use `testease batch run batch.yaml`. The batch's `parallel` setting limits how
+many scenarios run together; each keeps its own run record. See
+[Independent scenario batches](docs/operations.md#independent-scenario-batches).
+
 ## What is in a record
 
 A record is a directory. `events.jsonl` is the evidence - append-only, never

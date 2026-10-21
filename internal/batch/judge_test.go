@@ -15,6 +15,13 @@ type judgeInvoker struct {
 	calls [][]string
 }
 
+type malformedJudgeInvoker struct{}
+
+func (malformedJudgeInvoker) Invoke(_ context.Context, stdout, _ io.Writer, _ ...string) int {
+	_, _ = io.WriteString(stdout, `{"verdict":"hold"}`)
+	return 20
+}
+
 func (i *judgeInvoker) Invoke(_ context.Context, stdout, _ io.Writer, args ...string) int {
 	i.calls = append(i.calls, slices.Clone(args))
 	runID := args[slices.Index(args, "judge")+1]
@@ -125,5 +132,24 @@ func TestJudgeRejectsUnsafeNamesFromSavedBatchRecord(t *testing.T) {
 		if _, err := Judge(context.Background(), runs, id, &judgeInvoker{}); err == nil {
 			t.Fatalf("accepted unsafe child record %+v", test)
 		}
+	}
+}
+
+func TestJudgeDoesNotCallMalformedOutputAVerdictFailure(t *testing.T) {
+	runs := t.TempDir()
+	id := "malformed"
+	dir := filepath.Join(runs, "batches", id)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := save(dir, Result{Schema: Schema, ID: id, Status: "measured", Tests: []TestResult{{Name: "alpha", Scenario: "alpha", RunID: "alpha-run", Status: "measured"}}}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Judge(context.Background(), runs, id, malformedJudgeInvoker{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ExitCode != 10 || got.Tests[0].Status != "unjudgeable" {
+		t.Fatalf("malformed judgment = %+v", got)
 	}
 }

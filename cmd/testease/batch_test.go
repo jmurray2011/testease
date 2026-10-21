@@ -47,3 +47,25 @@ func TestBatchValidateChecksEveryScenarioBeforeProvisioning(t *testing.T) {
 		t.Fatalf("missing bravo probe was accepted: %v", err)
 	}
 }
+
+func TestRunSuffixRefusesUnsafeNamesAndResume(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"path traversal", []string{"run", "missing", "--run-suffix", "../escape"}, "invalid run suffix"},
+		{"resume conflict", []string{"run", "missing", "--run-suffix", "variant", "--resume", "old-run"}, "--run-suffix cannot be used with --resume"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := newRoot()
+			var output bytes.Buffer
+			root.SetOut(&output)
+			root.SetErr(&output)
+			root.SetArgs(tc.args)
+			if err := root.Execute(); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("run error = %v, output = %q, want %q", err, output.String(), tc.want)
+			}
+		})
+	}
+}

@@ -144,6 +144,129 @@ tests:
 	}
 }
 
+type variantInvoker struct {
+	mu     sync.Mutex
+	active int
+	most   int
+	calls  map[string][]string
+}
+
+func (i *variantInvoker) Invoke(_ context.Context, stdout, stderr io.Writer, args ...string) int {
+	suffixAt := slices.Index(args, "--run-suffix")
+	paramAt := slices.Index(args, "--param")
+	if suffixAt < 0 || suffixAt+1 >= len(args) || paramAt < 0 || paramAt+1 >= len(args) {
+		return 2
+	}
+	variant := args[paramAt+1]
+	i.mu.Lock()
+	i.active++
+	i.most = max(i.most, i.active)
+	i.calls[variant] = slices.Clone(args)
+	i.mu.Unlock()
+	_, _ = fmt.Fprintln(stderr, "probe started")
+	time.Sleep(30 * time.Millisecond)
+	_, _ = fmt.Fprintf(stdout, `{"run_id":"alpha-20261020T120000Z-%s"}`, args[suffixAt+1])
+	i.mu.Lock()
+	i.active--
+	i.mu.Unlock()
+	return 0
+}
+
+func TestNamedEntriesCanRunTheSameScenarioConcurrentlyWithDistinctRecords(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "batch.yaml")
+	definition := `schema: 1
+name: two-variants
+parallel: 2
+tests:
+  - name: writer
+    scenario: alpha
+    params: {history: writer}
+    target: writer-vm
+    target_catalog: /private/targets.yaml
+  - name: clean
+    scenario: alpha
+    params: {history: clean}
+    target: clean-vm
+    target_catalog: /private/targets.yaml
+`
+	if err := os.WriteFile(path, []byte(definition), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatalf("load named variants: %v", err)
+	}
+	invoker := &variantInvoker{calls: map[string][]string{}}
+	var progress lockedBuffer
+	result, err := Run(context.Background(), Options{
+		Definition: loaded, RunsDir: dir, ScenarioRoot: "/scenarios", Invoker: invoker,
+		Progress: &progress, Now: func() time.Time { return time.Date(2026, 10, 20, 12, 0, 0, 123, time.UTC) },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if invoker.most != 2 || len(invoker.calls) != 2 {
+		t.Fatalf("maximum live = %d, calls = %v; want both variants live", invoker.most, invoker.calls)
+	}
+	for variant, target := range map[string]string{"history=writer": "writer-vm", "history=clean": "clean-vm"} {
+		if !slices.Contains(invoker.calls[variant], target) {
+			t.Errorf("%s invocation = %v, want target %s", variant, invoker.calls[variant], target)
+		}
+	}
+	if result.Tests[0].RunID == result.Tests[1].RunID || result.Tests[0].Log == result.Tests[1].Log {
+		t.Fatalf("variants shared a run id or log: %+v", result.Tests)
+	}
+	if result.Tests[0].Log != "writer.log" || result.Tests[1].Log != "clean.log" {
+		t.Fatalf("logs = %q, %q, want entry names", result.Tests[0].Log, result.Tests[1].Log)
+	}
+	for _, want := range []string{"[writer] probe started", "[clean] probe started"} {
+		if !strings.Contains(progress.String(), want) {
+			t.Errorf("progress %q lacks %q", progress.String(), want)
+		}
+	}
+	body, err := os.ReadFile(filepath.Join(result.Dir, "batch.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved struct {
+		Tests []struct {
+			Name     string `json:"name"`
+			Scenario string `json:"scenario"`
+			RunID    string `json:"run_id"`
+		} `json:"tests"`
+	}
+	if err := json.Unmarshal(body, &saved); err != nil {
+		t.Fatal(err)
+	}
+	if len(saved.Tests) != 2 || saved.Tests[0].Name != "writer" || saved.Tests[1].Name != "clean" || saved.Tests[0].Scenario != "alpha" || saved.Tests[1].Scenario != "alpha" || saved.Tests[0].RunID == saved.Tests[1].RunID {
+		t.Fatalf("saved entries = %+v", saved.Tests)
+	}
+}
+
+func TestBatchRejectsDuplicateOrUnsafeEntryNames(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		tests string
+		want  string
+	}{
+		{"same explicit name", "  - {name: same, scenario: alpha}\n  - {name: same, scenario: bravo}\n", "duplicate test name"},
+		{"explicit name collides with default", "  - {scenario: alpha}\n  - {name: alpha, scenario: bravo}\n", "duplicate test name"},
+		{"same unnamed scenario", "  - {scenario: alpha}\n  - {scenario: alpha}\n", "duplicate test name"},
+		{"unsafe path", "  - {name: ../escape, scenario: alpha}\n", "invalid test name"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "batch.yaml")
+			if err := os.WriteFile(path, []byte("schema: 1\nname: smoke\ntests:\n"+tc.tests), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := Load(path); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("load error = %v, want %q", err, tc.want)
+			}
+		})
+	}
+}
+
 type heldInvoker struct {
 	started chan string
 	release map[string]chan struct{}

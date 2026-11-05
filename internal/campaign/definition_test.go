@@ -112,3 +112,24 @@ func TestValidateAgainstScenarioRefusesUnknownJudgeAndRender(t *testing.T) {
 		t.Fatalf("unknown render error = %v", err)
 	}
 }
+
+func TestLoadResolvesARelativeCampaignDirectoryAbsolutely(t *testing.T) {
+	dir := writeDefinition(t, `
+schema: 1
+name: relative-dir
+scenario: saml-e2e-live
+lifecycle:
+  prepare: prepare.sh
+`, "prepare.sh")
+	t.Chdir(filepath.Dir(dir))
+	definition, err := Load(filepath.Base(dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !filepath.IsAbs(definition.Dir) {
+		t.Fatalf("definition.Dir = %q; hooks run with Dir as the child's cwd, so a relative Dir makes the hook path resolve against itself", definition.Dir)
+	}
+	if got, want := HookPath(definition, definition.Lifecycle.Prepare), filepath.Join(definition.Dir, "prepare.sh"); got != want {
+		t.Fatalf("hook path = %q, want %q", got, want)
+	}
+}

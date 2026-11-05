@@ -58,6 +58,12 @@ type Preflight struct {
 }
 
 func Load(dir string) (*Definition, error) {
+	// Hooks execute with Dir as the child's working directory, so Dir must be
+	// absolute or a relative hook path would resolve against itself.
+	dir, err := filepath.Abs(dir)
+	if err != nil {
+		return nil, fmt.Errorf("resolve campaign directory %s: %w", dir, err)
+	}
 	path := filepath.Join(dir, "campaign.yaml")
 	body, err := os.ReadFile(path)
 	if err != nil {

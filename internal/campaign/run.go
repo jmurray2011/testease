@@ -151,9 +151,22 @@ func Run(ctx context.Context, options Options) (Result, error) {
 		now = options.Now
 	}
 	id := ID(options.Definition.Name, now())
+	// Hooks run with the campaign definition as their working directory while
+	// child runs inherit the caller's, so both paths must be absolute.
+	if options.RunsDir != "" {
+		runsDir, err := filepath.Abs(options.RunsDir)
+		if err != nil {
+			return Result{}, fmt.Errorf("resolve runs directory %s: %w", options.RunsDir, err)
+		}
+		options.RunsDir = runsDir
+	}
 	dir := options.CampaignDir
 	if dir == "" {
 		dir = filepath.Join(options.RunsDir, "campaigns", id)
+	}
+	dir, err := filepath.Abs(dir)
+	if err != nil {
+		return Result{}, fmt.Errorf("resolve campaign record %s: %w", dir, err)
 	}
 	options.CampaignDir = dir
 	result := Result{ID: id, Dir: dir, Status: StatusRunning, Runs: []string{}, DefinitionSHA: options.Definition.SHA256}

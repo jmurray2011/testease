@@ -205,3 +205,31 @@ func TestPrepareReceiptSuppliesTheGeneratedInputBundle(t *testing.T) {
 		t.Fatalf("run call did not consume prepare receipt: %s", runCall)
 	}
 }
+
+func TestRelativeRunsDirStillHandsHooksAnAbsoluteReceiptPath(t *testing.T) {
+	dir := writeDefinition(t, "schema: 1\nname: demo\nscenario: scenario-a\nlifecycle: {prepare: prepare.sh}\n", "prepare.sh")
+	prepare := filepath.Join(dir, "prepare.sh")
+	script := "#!/bin/sh\ncd /\nprintf '{\"schema\":1,\"input_bundle\":\"/staged/inputs.yaml\"}\\n' >\"$TESTEASE_HOOK_RECEIPT\"\n"
+	if err := os.WriteFile(prepare, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	definition, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(t.TempDir())
+	invoker := &fakeInvoker{}
+	_, err = Run(context.Background(), Options{Definition: definition, RunsDir: "scenario-runs", ScenarioRoot: t.TempDir(), Invoker: invoker})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var runCall string
+	for _, call := range invoker.calls {
+		if strings.Contains(call, " run ") {
+			runCall = call
+		}
+	}
+	if !strings.Contains(runCall, "--input-bundle /staged/inputs.yaml") {
+		t.Fatalf("run call did not consume prepare receipt: %s", runCall)
+	}
+}

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -30,6 +31,20 @@ type Driver struct {
 
 var _ provisioned.Driver = Driver{}
 
+// rootVolumeGB reads the optional catalog root volume size. Zero means the
+// catalog did not ask for one and the AMI's own mapping stands.
+func rootVolumeGB(provision map[string]string) (int, error) {
+	raw, ok := provision["ec2.root_volume_gb"]
+	if !ok || raw == "" {
+		return 0, nil
+	}
+	size, err := strconv.Atoi(raw)
+	if err != nil || size <= 0 {
+		return 0, fmt.Errorf("EC2 catalog setting ec2.root_volume_gb must be a positive whole number of GiB, got %q", raw)
+	}
+	return size, nil
+}
+
 func (d Driver) check() error {
 	if d.CLI == nil || d.Profile == "" || d.Region == "" {
 		return errors.New("EC2 requires an explicit AWS profile and region")
@@ -49,6 +64,9 @@ func (d Driver) Check(ctx context.Context, image string, provision map[string]st
 		if provision[key] == "" {
 			return fmt.Errorf("EC2 requires catalog provision setting %q", key)
 		}
+	}
+	if _, err := rootVolumeGB(provision); err != nil {
+		return err
 	}
 	out, err := d.CLI.Output(ctx, "sts", "get-caller-identity", "--output", "json")
 	if err != nil {
@@ -97,6 +115,38 @@ func (d Driver) Check(ctx context.Context, image string, provision map[string]st
 	return nil
 }
 
+// rootVolumeMapping resizes the AMI's root device. The device name comes from
+// the AMI, because it differs between images and a wrong name adds a second
+// volume instead of growing the root.
+func (d Driver) rootVolumeMapping(ctx context.Context, image string, sizeGB int) (string, error) {
+	out, err := d.CLI.Output(ctx, "ec2", "describe-images", "--image-ids", image, "--output", "json")
+	if err != nil {
+		return "", fmt.Errorf("find root device of AMI %s: %w", image, err)
+	}
+	var images struct {
+		Images []struct {
+			ImageID        string `json:"ImageId"`
+			RootDeviceName string `json:"RootDeviceName"`
+		}
+	}
+	if err := json.Unmarshal(out, &images); err != nil || len(images.Images) != 1 || images.Images[0].RootDeviceName == "" {
+		return "", fmt.Errorf("AMI %s reported no root device name", image)
+	}
+	type ebs struct {
+		VolumeSize          int
+		VolumeType          string
+		DeleteOnTermination bool
+	}
+	mapping, err := json.Marshal([]struct {
+		DeviceName string
+		Ebs        ebs
+	}{{DeviceName: images.Images[0].RootDeviceName, Ebs: ebs{VolumeSize: sizeGB, VolumeType: "gp3", DeleteOnTermination: true}}})
+	if err != nil {
+		return "", err
+	}
+	return string(mapping), nil
+}
+
 func (d Driver) Create(ctx context.Context, req provisioned.Request) (provisioned.Machine, error) {
 	if err := d.check(); err != nil {
 		return provisioned.Machine{}, err
@@ -107,6 +157,17 @@ func (d Driver) Create(ctx context.Context, req provisioned.Request) (provisione
 	for _, key := range []string{"ec2.instance_type", "ec2.subnet_id", "ec2.instance_profile"} {
 		if req.Provision[key] == "" {
 			return provisioned.Machine{}, fmt.Errorf("EC2 requires catalog provision setting %q", key)
+		}
+	}
+	rootGB, err := rootVolumeGB(req.Provision)
+	if err != nil {
+		return provisioned.Machine{}, err
+	}
+	var blockDevices string
+	if rootGB > 0 {
+		blockDevices, err = d.rootVolumeMapping(ctx, req.Image, rootGB)
+		if err != nil {
+			return provisioned.Machine{}, err
 		}
 	}
 	type tag struct{ Key, Value string }
@@ -136,6 +197,9 @@ func (d Driver) Create(ctx context.Context, req provisioned.Request) (provisione
 	}
 	if group := req.Provision["ec2.security_group_id"]; group != "" {
 		args = append(args, "--security-group-ids", group)
+	}
+	if blockDevices != "" {
+		args = append(args, "--block-device-mappings", blockDevices)
 	}
 	var response struct {
 		Instances []struct {

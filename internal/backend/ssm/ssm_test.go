@@ -420,3 +420,62 @@ func TestCompressedArtifactMustExpandToTheSizeTheTargetReported(t *testing.T) {
 		t.Fatal("invalid gzip was accepted")
 	}
 }
+
+func TestBucketLocationNamesTheSigningRegion(t *testing.T) {
+	t.Parallel()
+
+	// get-bucket-location reports us-east-1 as no constraint at all, and the
+	// oldest Irish buckets as "EU". A URL signed for any other region than the
+	// bucket's is refused by S3, and the instance downloads the refusal.
+	for location, want := range map[string]string{
+		"None": "us-east-1", "": "us-east-1", "null": "us-east-1",
+		"EU": "eu-west-1", "us-east-2\n": "us-east-2", "ap-southeast-1": "ap-southeast-1",
+	} {
+		if got := signingRegion(location); got != want {
+			t.Errorf("signingRegion(%q) = %q, want %q", location, got, want)
+		}
+	}
+}
+
+func TestATransferIsSignedForTheBucketsRegionNotTheRunsRegion(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	calls := dir + "/calls"
+	fake := dir + "/aws"
+	script := "#!/bin/sh\nprintf '%s\\n' \"$*\" >> " + calls + "\n" +
+		"case \"$*\" in\n" +
+		"  *get-bucket-location*) echo None ;;\n" +
+		"  *presign*) echo https://lab-media.s3.amazonaws.com/x?sig ;;\n" +
+		"esac\n"
+	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	c := Client{Profile: "lab", Region: "us-east-2", Bin: fake}
+	url, err := c.presignTransfer(t.Context(), "s3://lab-media/scratch/testease-transfer/abc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(url, "https://") {
+		t.Errorf("url = %q", url)
+	}
+	raw, err := os.ReadFile(calls)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var presign string
+	for _, line := range strings.Split(string(raw), "\n") {
+		if strings.Contains(line, "get-bucket-location") && !strings.Contains(line, "--bucket lab-media") {
+			t.Errorf("location lookup named the wrong bucket: %q", line)
+		}
+		if strings.Contains(line, " s3 presign ") {
+			presign = line
+		}
+	}
+	if !strings.Contains(presign, "--region us-east-1") || strings.Contains(presign, "--region us-east-2") {
+		t.Errorf("presign call = %q, want it signed for the bucket's region us-east-1 only", presign)
+	}
+	if !strings.Contains(presign, "--profile lab") {
+		t.Errorf("presign call = %q lost the account", presign)
+	}
+}

@@ -732,13 +732,9 @@ func (s *Session) putViaS3(ctx context.Context, local io.Reader, remote string, 
 		resultErr = errors.Join(resultErr, cleanupErr)
 	}()
 
-	out, err := s.Client.Output(ctx, "s3", "presign", uri, "--expires-in", "3600")
+	url, err := s.Client.presignTransfer(ctx, uri)
 	if err != nil {
-		return fmt.Errorf("sign temporary SSM transfer: %w", err)
-	}
-	url := strings.TrimSpace(string(out))
-	if !strings.HasPrefix(url, "https://") {
-		return errors.New("sign temporary SSM transfer: aws did not return an https URL")
+		return err
 	}
 
 	command := downloadCommand(s.Instance.Platform, url, remote, mode, token)
@@ -750,6 +746,43 @@ func (s *Session) putViaS3(ctx context.Context, local io.Reader, remote string, 
 		return fmt.Errorf("download temporary media on %s: exit %d", s.Instance.ID, run.RC)
 	}
 	return nil
+}
+
+// presignTransfer signs a download URL for a staged object. The URL is
+// signed for the bucket's own region, which need not be the run's: S3
+// refuses a URL signed for another region, and the instance would download
+// the refusal in place of the media.
+func (c Client) presignTransfer(ctx context.Context, uri string) (string, error) {
+	rest, _ := strings.CutPrefix(uri, "s3://")
+	bucket, _, _ := strings.Cut(rest, "/")
+	location, err := c.Output(ctx, "s3api", "get-bucket-location", "--bucket", bucket, "--query", "LocationConstraint", "--output", "text")
+	if err != nil {
+		return "", fmt.Errorf("find region of SSM transfer store %s: %w", bucket, err)
+	}
+	signer := c
+	signer.Region = signingRegion(string(location))
+	out, err := signer.Output(ctx, "s3", "presign", uri, "--expires-in", "3600")
+	if err != nil {
+		return "", fmt.Errorf("sign temporary SSM transfer: %w", err)
+	}
+	url := strings.TrimSpace(string(out))
+	if !strings.HasPrefix(url, "https://") {
+		return "", errors.New("sign temporary SSM transfer: aws did not return an https URL")
+	}
+	return url, nil
+}
+
+// signingRegion turns get-bucket-location's answer into a region. us-east-1
+// is reported as no constraint, and the oldest Irish buckets as "EU".
+func signingRegion(location string) string {
+	switch l := strings.TrimSpace(location); l {
+	case "", "None", "null":
+		return "us-east-1"
+	case "EU":
+		return "eu-west-1"
+	default:
+		return l
+	}
 }
 
 func transferToken() (string, error) {

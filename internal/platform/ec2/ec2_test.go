@@ -25,7 +25,7 @@ func (f *fakeCLI) Output(_ context.Context, args ...string) ([]byte, error) {
 	case "sts get-caller-identity":
 		return []byte(`{"Account":"000000000000"}`), nil
 	case "ec2 describe-images":
-		return []byte(`{"Images":[{"ImageId":"ami-fictional"}]}`), nil
+		return []byte(`{"Images":[{"ImageId":"ami-fictional","RootDeviceName":"/dev/sda1"}]}`), nil
 	case "ec2 describe-subnets":
 		return []byte(`{"Subnets":[{"SubnetId":"subnet-fictional"}]}`), nil
 	case "iam get-instance-profile":
@@ -140,6 +140,76 @@ func TestEC2CreateRetriesUncertainLaunchWithSameToken(t *testing.T) {
 		second := strings.Join(cli.launches[1], " ")
 		if first != second || !strings.Contains(first, "--client-token ") {
 			t.Errorf("launch retries use different or missing idempotency token: %q; %q", first, second)
+		}
+	}
+}
+
+func TestEC2CreateSizesRootVolumeFromCatalog(t *testing.T) {
+	t.Parallel()
+	cli := &fakeCLI{}
+	driver := Driver{CLI: cli, Profile: "fictional-profile", Region: "us-east-1"}
+	_, err := driver.Create(context.Background(), provisioned.Request{
+		Image: "ami-fictional",
+		Provision: map[string]string{
+			"ec2.instance_type": "t3.small", "ec2.subnet_id": "subnet-fictional",
+			"ec2.instance_profile": "fictional-instance-profile", "ec2.root_volume_gb": "100",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var create string
+	for _, call := range cli.calls {
+		if call[0] == "ec2" && call[1] == "run-instances" {
+			create = strings.Join(call, " ")
+		}
+	}
+	want := `--block-device-mappings [{"DeviceName":"/dev/sda1","Ebs":{"VolumeSize":100,"VolumeType":"gp3","DeleteOnTermination":true}}]`
+	if !strings.Contains(create, want) {
+		t.Errorf("create call %q lacks %q", create, want)
+	}
+}
+
+func TestEC2CreateWithoutRootVolumeKeepsAMIDefault(t *testing.T) {
+	t.Parallel()
+	cli := &fakeCLI{}
+	driver := Driver{CLI: cli, Profile: "fictional-profile", Region: "us-east-1"}
+	_, err := driver.Create(context.Background(), provisioned.Request{
+		Image: "ami-fictional",
+		Provision: map[string]string{
+			"ec2.instance_type": "t3.small", "ec2.subnet_id": "subnet-fictional",
+			"ec2.instance_profile": "fictional-instance-profile",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, call := range cli.calls {
+		if got := strings.Join(call, " "); strings.Contains(got, "--block-device-mappings") {
+			t.Errorf("unexpected block device mapping without a catalog size: %q", got)
+		}
+	}
+}
+
+func TestEC2RefusesInvalidRootVolume(t *testing.T) {
+	t.Parallel()
+	for _, size := range []string{"0", "-5", "ten", "100.5"} {
+		cli := &fakeCLI{}
+		driver := Driver{CLI: cli, Profile: "fictional-profile", Region: "us-east-1"}
+		provision := map[string]string{
+			"ec2.instance_type": "t3.small", "ec2.subnet_id": "subnet-fictional",
+			"ec2.instance_profile": "fictional-instance-profile", "ec2.root_volume_gb": size,
+		}
+		if err := driver.Check(context.Background(), "ami-fictional", provision); err == nil {
+			t.Errorf("doctor accepted root volume %q", size)
+		}
+		if _, err := driver.Create(context.Background(), provisioned.Request{Image: "ami-fictional", Provision: provision}); err == nil {
+			t.Errorf("create accepted root volume %q", size)
+		}
+		for _, call := range cli.calls {
+			if call[0] == "ec2" && call[1] == "run-instances" {
+				t.Errorf("run-instances called with invalid root volume %q", size)
+			}
 		}
 	}
 }

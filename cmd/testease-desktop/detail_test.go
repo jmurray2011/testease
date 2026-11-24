@@ -226,6 +226,9 @@ func TestAMatrixRecordOpensOnItsCells(t *testing.T) {
 	if !strings.Contains(v.stepTitle.Text, "1 cell") {
 		t.Errorf("title = %q, want it to say the steps are in its cell", v.stepTitle.Text)
 	}
+	if got := v.targetsText(); !strings.Contains(got, "each cell") {
+		t.Errorf("targets = %q, want it to say they are in the cells", got)
+	}
 	var opened string
 	v.onOpenCell = func(d string) { opened = d }
 	v.cells.Select(0)

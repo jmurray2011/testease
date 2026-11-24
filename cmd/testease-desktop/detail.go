@@ -431,7 +431,10 @@ func targetParts(d browse.Detail) []string {
 		}
 		out = append(out, strings.TrimSpace(h.Host+" "+ref)+" · "+fateText(fates[h.Host]))
 	}
-	if len(out) == 0 {
+	switch {
+	case len(out) == 0 && len(d.CellList) > 0:
+		return []string{"Targets are resolved in each cell. Open a cell to see its targets and what became of them."}
+	case len(out) == 0:
 		return []string{"No target was resolved."}
 	}
 	return out

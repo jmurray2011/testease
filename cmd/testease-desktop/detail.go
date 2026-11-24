@@ -12,7 +12,6 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/storage"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
@@ -53,7 +52,7 @@ func newDetailView(dir string, back func()) (*detailView, error) {
 	// Header: where this is, what it measured, and how to get at the files.
 	backButton := widget.NewButtonWithIcon("Runs", theme.NavigateBackIcon(), back)
 	backButton.Importance = widget.LowImportance
-	id := widget.NewLabelWithStyle(d.RunID, fyne.TextAlignLeading, fyne.TextStyle{Monospace: true, Bold: true})
+	id := widget.NewLabelWithStyle(d.RunID, fyne.TextAlignLeading, fyne.TextStyle{Monospace: true})
 	id.Selectable = true
 	status := newPill(statusOf(d.Run), statusKind(statusOf(d.Run)))
 	openFolder := widget.NewButtonWithIcon("Open folder", theme.FolderOpenIcon(), func() {
@@ -61,12 +60,16 @@ func newDetailView(dir string, back func()) (*detailView, error) {
 			_ = fyne.CurrentApp().OpenURL(u)
 		}
 	})
-	top := container.NewHBox(backButton, widget.NewLabel("/"), id, container.NewCenter(status), layout.NewSpacer(), openFolder)
+	id.Truncation = fyne.TextTruncateEllipsis
+	top := container.NewBorder(nil, nil,
+		container.NewHBox(backButton, widget.NewLabel("/")),
+		container.NewHBox(container.NewCenter(status), openFolder),
+		id)
 
 	v.meta = metaParts(d)
 	metaLabel := widget.NewLabel(strings.Join(v.meta, "    "))
 	metaLabel.Importance = widget.LowImportance
-	metaLabel.Truncation = fyne.TextTruncateEllipsis
+	metaLabel.Wrapping = fyne.TextWrapWord
 	header := container.NewVBox(container.NewPadded(container.NewVBox(top, metaLabel)), widget.NewSeparator())
 
 	// Steps, on the left.
@@ -95,17 +98,24 @@ func newDetailView(dir string, back func()) (*detailView, error) {
 
 	// The selected step, in the middle.
 	v.stepTitle = widget.NewLabelWithStyle("", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	v.stepTitle.Truncation = fyne.TextTruncateEllipsis
 	v.stepMeta = widget.NewLabel("")
+	v.stepMeta.Truncation = fyne.TextTruncateEllipsis
 	v.stepMeta.Importance = widget.LowImportance
+	// A TextGrid asks for the width of its longest line, and a drive step's
+	// output can carry lines thousands of characters long. Each one sits in a
+	// scroll of its own so output scrolls rather than widening the window.
 	v.stdout = widget.NewTextGrid()
+	v.stdout.Scroll = fyne.ScrollNone
 	v.stderr = widget.NewTextGrid()
+	v.stderr.Scroll = fyne.ScrollNone
 	v.facts = container.NewVBox()
 	tabs := container.NewAppTabs(
-		container.NewTabItem("stdout", container.NewPadded(v.stdout)),
-		container.NewTabItem("stderr", container.NewPadded(v.stderr)),
+		container.NewTabItem("stdout", container.NewScroll(container.NewPadded(v.stdout))),
+		container.NewTabItem("stderr", container.NewScroll(container.NewPadded(v.stderr))),
 		container.NewTabItem("Facts", container.NewVScroll(container.NewPadded(v.facts))),
 	)
-	center := container.NewBorder(container.NewVBox(container.NewHBox(v.stepTitle, v.stepMeta), widget.NewSeparator()), nil, nil, nil, tabs)
+	center := container.NewBorder(container.NewVBox(v.stepTitle, v.stepMeta, widget.NewSeparator()), nil, nil, nil, tabs)
 
 	// What judges, targets and readers said, on the right.
 	v.verdicts = verdictParts(d)
@@ -126,7 +136,7 @@ func newDetailView(dir string, back func()) (*detailView, error) {
 	inner := container.NewHSplit(center, right)
 	inner.Offset = 0.7
 	outer := container.NewHSplit(left, inner)
-	outer.Offset = 0.24
+	outer.Offset = 0.3
 	v.content = container.NewBorder(header, nil, nil, nil, outer)
 	return v, nil
 }

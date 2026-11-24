@@ -27,10 +27,11 @@ var (
 // app should keep. The variables are a plain list, not a table: there is
 // nothing on this screen to pick.
 type settingsView struct {
-	rows    []environment.Setting
-	where   *widget.Label
-	list    *fyne.Container
-	content fyne.CanvasObject
+	rows     []environment.Setting
+	where    *widget.Label
+	toolsBox *fyne.Container
+	list     *fyne.Container
+	content  fyne.CanvasObject
 }
 
 func newSettingsView(dir, from string, getenv func(string) string) *settingsView {
@@ -75,9 +76,10 @@ func newSettingsView(dir, from string, getenv func(string) string) *settingsView
 		v.list.Add(container.New(&fixedColumns{widths: envWidths}, cells...))
 	}
 
+	v.toolsBox = container.NewVBox()
 	v.content = container.NewVBox(
 		screenTitle("Settings", nil), widget.NewSeparator(),
-		container.NewPadded(runs), widget.NewSeparator(),
+		container.NewPadded(runs), v.toolsBox, widget.NewSeparator(),
 		container.NewPadded(envHeading), v.list, widget.NewSeparator(),
 		note("These are the values this app was started with. A testease started from another shell reads that shell's environment. Variables marked \"pass as a flag\" change what is measured, recorded or judged, and the record does not say they were set."),
 	)
@@ -140,4 +142,23 @@ func (v *settingsView) cell(row, col int) (string, pillKind, bool) {
 func (v *settingsView) cellText(row, col int) string {
 	text, _, _ := v.cell(row, col)
 	return text
+}
+
+// addTools shows where scenarios are and which testease runs are started
+// with.
+func (v *settingsView) addTools(t tools) {
+	line := func(heading, value, from string) {
+		h := widget.NewLabelWithStyle(heading, fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+		text := "not found"
+		if value != "" {
+			text = value + " (" + from + ")"
+		}
+		l := widget.NewLabelWithStyle(text, fyne.TextAlignLeading, fyne.TextStyle{Monospace: true})
+		l.Selectable = true
+		l.Wrapping = fyne.TextWrapBreak
+		v.toolsBox.Add(container.NewPadded(container.NewVBox(h, l)))
+	}
+	line("Scenario root", t.scenarioRoot, t.scenarioFrom)
+	line("testease binary", t.testease, t.testeaseFrom)
+	v.toolsBox.Add(container.NewPadded(note("The scenario root is taken like the runs directory: --scenario-root, then TESTEASE_SCENARIO_ROOT, then the folder last chosen here. The binary is --testease, then the testease beside this app, then the one on PATH.")))
 }

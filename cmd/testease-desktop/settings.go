@@ -10,17 +10,26 @@ import (
 // that change a measurement are never remembered anywhere.
 const prefRunsDir = "runs-dir"
 
+// prefScenarioRoot is the scenario root last chosen here: a path, like the
+// runs directory.
+const prefScenarioRoot = "scenario-root"
+
 // resolveRunsDir follows the house precedence - flag, then environment, then a
 // default - with the folder last chosen here standing in for the default. The
 // CLI's own default is relative to the working directory, which means nothing
 // to an app started from a menu. It also says where the answer came from, so
 // the app can show it.
 func resolveRunsDir(flag, env, remembered string) (dir, from string) {
+	return resolvePath(flag, "--runs-dir", env, "TESTEASE_RUNS_DIR", remembered)
+}
+
+// resolvePath is the same precedence for any path this app remembers.
+func resolvePath(flag, flagName, env, envName, remembered string) (dir, from string) {
 	switch {
 	case flag != "":
-		return flag, "--runs-dir"
+		return flag, flagName
 	case env != "":
-		return env, "TESTEASE_RUNS_DIR"
+		return env, envName
 	case remembered != "":
 		return remembered, "last folder chosen here"
 	default:

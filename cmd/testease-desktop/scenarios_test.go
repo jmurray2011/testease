@@ -20,7 +20,7 @@ func TestARunIsAskedForWithTheCLIsOwnFlags(t *testing.T) {
 		RunsDir: "/srv/runs", ScenarioRoot: "/srv/scenarios", Scenario: "hello",
 		Params: map[string]string{"version": "1.2.3", "image": "debian:12-slim", "unset": ""},
 		Target: "box-a", Keep: true,
-		Extra:  "--docker-context=remote\n\n  --env-file=C:\\secrets\\hello.env  \n",
+		Extra: "--docker-context=remote\n\n  --env-file=C:\\secrets\\hello.env  \n",
 	})
 	if err != nil {
 		t.Fatalf("runArgs: %v", err)
@@ -88,8 +88,8 @@ func TestTheScenariosScreenListsWhatIsUnderTheScenarioRoot(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "broken", "scenario.yaml"), []byte("{not yaml"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(filepath.Join(exampleRoot(t), "hello"), filepath.Join(root, "hello")); err != nil {
-		t.Skipf("no symlinks here: %v", err)
+	if err := os.CopyFS(filepath.Join(root, "hello"), os.DirFS(filepath.Join(exampleRoot(t), "hello"))); err != nil {
+		t.Fatal(err)
 	}
 
 	v := newScenariosView(root, "TESTEASE_SCENARIO_ROOT", func(string) {})

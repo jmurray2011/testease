@@ -1,8 +1,10 @@
 package docker
 
 import (
+	"archive/tar"
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -25,10 +27,11 @@ func TestAKilledProcessReportsNoCode(t *testing.T) {
 	// the runner the step was measured - so a probe the backstop killed lands
 	// in the record as `rc=-1 status=measured`, which is the tool claiming a
 	// measurement nobody took.
+	sleeper := fakeExecutable(t, "sleep", nil)
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 
-	err := exec.CommandContext(ctx, "sleep", "5").Run()
+	err := exec.CommandContext(ctx, sleeper).Run()
 	if err == nil {
 		t.Fatal("the process was not killed, so this tests nothing")
 	}
@@ -42,31 +45,51 @@ func TestAKilledProcessReportsNoCode(t *testing.T) {
 func TestAnOrdinaryFailureKeepsItsCode(t *testing.T) {
 	t.Parallel()
 
-	err := exec.Command("sh", "-c", "exit 3").Run()
+	err := exec.Command(fakeExecutable(t, "exit-3", nil)).Run()
 	rc, reported := codeOf(err)
 	if !reported || rc != 3 {
 		t.Errorf("rc = %d reported = %v, want 3 and true", rc, reported)
 	}
 }
 
-// fakeDocker writes a docker stand-in whose exec and inspect answers are the
-// script's, so the transport-vs-probe split can be exercised without a daemon.
-func fakeDocker(t *testing.T, body string) Client {
-	t.Helper()
+// fakeBehaviours are the docker stand-ins the tests run, each answering exec,
+// inspect and the rest as the test needs, so the transport-vs-probe split can
+// be exercised without a daemon. A fake runs in its own process: whatever it
+// needs from its test arrives as a parameter.
+var fakeBehaviours = map[string]fakeBehaviour{
+	"sleep":                    func(fakeCall) int { time.Sleep(5 * time.Second); return 0 },
+	"exit-3":                   func(fakeCall) int { return 3 },
+	"exec-fails-in-docker":     fakeExecFailsInDocker,
+	"exec-on-dead-container":   fakeExecOnDeadContainer,
+	"exec-on-live-container":   fakeExecOnLiveContainer,
+	"alpine-shells":            fakeAlpineShells,
+	"structured-channel":       fakeStructuredChannel,
+	"run-no-such-image":        fakeRunNoSuchImage,
+	"run-exits-7":              fakeRunExits7,
+	"remote-drive":             fakeRemoteDrive,
+	"remote-drive-loses-it":    fakeRemoteDriveLosesIt,
+	"sha256sum":                fakeSHA256Sum,
+	"record-args":              fakeRecordArgs,
+	"name-conflict":            fakeNameConflict,
+	"inspect-describes-none":   fakeInspectDescribesNone,
+	"inspect-describes-some":   fakeInspectDescribesSome,
+	"exec-streams-then-sleeps": fakeExecStreamsThenSleeps,
+	"exec-fails-late":          fakeExecFailsLate,
+}
 
-	path := filepath.Join(t.TempDir(), "docker")
-	if err := os.WriteFile(path, []byte("#!/bin/bash\n"+body), 0o755); err != nil {
-		t.Fatalf("write fake docker: %v", err)
+// 125 is the docker CLI's own failure code: the daemon refused or never
+// answered, and the probe never ran.
+func fakeExecFailsInDocker(c fakeCall) int {
+	if c.arg(1) == "exec" {
+		return 125
 	}
-	return Client{Bin: path}
+	return 0
 }
 
 func TestDockersOwnExitCodeIsNotAMeasurement(t *testing.T) {
 	t.Parallel()
 
-	// 125 is the docker CLI's own failure code: the daemon refused or never
-	// answered, and the probe never ran.
-	s := &Session{Client: fakeDocker(t, `[ "$1" = exec ] && exit 125; exit 0`), Container: "box"}
+	s := &Session{Client: fakeDocker(t, "exec-fails-in-docker", nil), Container: "box"}
 	result, err := s.Run(t.Context(), []string{"true"}, target.RunOpts{Stdout: io.Discard, Stderr: io.Discard})
 	if err == nil {
 		t.Fatal("docker's own failure was recorded as a measurement")
@@ -82,12 +105,7 @@ func TestAnExitCodeFromADeadContainerIsNotAMeasurement(t *testing.T) {
 	// Confirmed live: docker exec against a stopped or missing container exits
 	// 1 with its own message, and that 1 would pass a negative control for a
 	// probe that never executed.
-	script := `case "$1" in
-exec) echo "container is not running" >&2; exit 1;;
-inspect) echo false; exit 0;;
-*) exit 0;;
-esac`
-	s := &Session{Client: fakeDocker(t, script), Container: "box"}
+	s := &Session{Client: fakeDocker(t, "exec-on-dead-container", nil), Container: "box"}
 	result, err := s.Run(t.Context(), []string{"true"}, target.RunOpts{Stdout: io.Discard, Stderr: io.Discard})
 	if err == nil {
 		t.Fatal("a dead container's docker error was recorded as the probe's exit code")
@@ -97,15 +115,31 @@ esac`
 	}
 }
 
+func fakeExecOnDeadContainer(c fakeCall) int {
+	switch c.arg(1) {
+	case "exec":
+		_, _ = fmt.Fprintln(c.stderr, "container is not running")
+		return 1
+	case "inspect":
+		_, _ = fmt.Fprintln(c.stdout, "false")
+	}
+	return 0
+}
+
+func fakeExecOnLiveContainer(c fakeCall) int {
+	switch c.arg(1) {
+	case "exec":
+		return 3
+	case "inspect":
+		_, _ = fmt.Fprintln(c.stdout, "true")
+	}
+	return 0
+}
+
 func TestAProbesExitCodeSurvivesWhileTheContainerLives(t *testing.T) {
 	t.Parallel()
 
-	script := `case "$1" in
-exec) exit 3;;
-inspect) echo true; exit 0;;
-*) exit 0;;
-esac`
-	s := &Session{Client: fakeDocker(t, script), Container: "box"}
+	s := &Session{Client: fakeDocker(t, "exec-on-live-container", nil), Container: "box"}
 	result, err := s.Run(t.Context(), []string{"false"}, target.RunOpts{Stdout: io.Discard, Stderr: io.Discard})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -121,15 +155,7 @@ func TestRunScriptHonorsTheProbeShebangWhenBashIsAbsent(t *testing.T) {
 	// Alpine supplies /bin/sh but no bash. A probe that explicitly names sh is
 	// executable there; the Docker transport must not replace that contract
 	// with its own stronger shell requirement.
-	script := `case "$1" in
-exec)
-  case " $* " in *" bash "*) exit 127;; esac
-  case " $* " in *" /bin/sh "*) exit 0;; esac
-  exit 126;;
-inspect) echo true; exit 0;;
-*) exit 0;;
-esac`
-	s := &Session{Client: fakeDocker(t, script), Container: "box"}
+	s := &Session{Client: fakeDocker(t, "alpine-shells", nil), Container: "box"}
 	result, err := s.RunScript(t.Context(), []byte("#!/bin/sh\nprintf 'ok\\n'\n"), nil,
 		target.RunOpts{Stdout: io.Discard, Stderr: io.Discard})
 	if err != nil {
@@ -140,6 +166,24 @@ esac`
 	}
 }
 
+// fakeAlpineShells has /bin/sh and no bash.
+func fakeAlpineShells(c fakeCall) int {
+	switch c.arg(1) {
+	case "exec":
+		words := c.words()
+		if slices.Contains(words, "bash") {
+			return 127
+		}
+		if slices.Contains(words, "/bin/sh") {
+			return 0
+		}
+		return 126
+	case "inspect":
+		_, _ = fmt.Fprintln(c.stdout, "true")
+	}
+	return 0
+}
+
 type observedStructured chan []byte
 
 func (w observedStructured) Write(p []byte) (int, error) {
@@ -147,27 +191,58 @@ func (w observedStructured) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+// fakeStructuredChannel writes a progress reading to the probe's fd 3 file,
+// holds the probe open until the test releases it, then writes a final fact.
+// The other execs read the file, as the poll and the drain do.
+func fakeStructuredChannel(c fakeCall) int {
+	channel := ""
+	for _, arg := range c.args {
+		if strings.HasPrefix(arg, "/tmp/testease-fd3-") {
+			channel = c.inContainer(arg)
+		}
+	}
+	joined := c.joined()
+	switch {
+	case strings.Contains(joined, " -i "):
+		if err := os.MkdirAll(filepath.Dir(channel), 0o755); err != nil {
+			return 1
+		}
+		if err := os.WriteFile(channel, []byte("progress\thttp.status\t404\n"), 0o644); err != nil {
+			return 1
+		}
+		for {
+			if _, err := os.Stat(c.params["release"]); err == nil {
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		f, err := os.OpenFile(channel, os.O_APPEND|os.O_WRONLY, 0o644)
+		if err != nil {
+			return 1
+		}
+		_, _ = f.WriteString("fact\thttp.final\t404\n")
+		_ = f.Close()
+		return 0
+	case strings.Contains(joined, "rm -f"):
+		body, _ := os.ReadFile(channel)
+		_, _ = c.stdout.Write(body)
+		_ = os.Remove(channel)
+		return 0
+	default:
+		body, err := os.ReadFile(channel)
+		if err != nil {
+			return 1
+		}
+		_, _ = c.stdout.Write(body)
+		return 0
+	}
+}
+
 func TestRunScriptStreamsStructuredReadingsBeforeProbeExit(t *testing.T) {
 	t.Parallel()
 
 	release := filepath.Join(t.TempDir(), "release")
-	script := fmt.Sprintf(`channel=""
-for arg in "$@"; do
-  case "$arg" in /tmp/testease-fd3-*) channel="$arg";; esac
-done
-case " $* " in
-  *" -i "*)
-    printf 'progress\thttp.status\t404\n' > "$channel"
-    while [ ! -e '%s' ]; do sleep 0.1; done
-    printf 'fact\thttp.final\t404\n' >> "$channel"
-    exit 0;;
-  *"rm -f"*)
-    cat "$channel" 2>/dev/null
-    rm -f "$channel"
-    exit 0;;
-  *) cat "$channel" 2>/dev/null; exit $?;;
-esac`, release)
-	session := &Session{Client: fakeDocker(t, script), Container: "box"}
+	session := &Session{Client: fakeDocker(t, "structured-channel", map[string]string{"release": release}), Container: "box"}
 	readings := make(observedStructured, 16)
 	done := make(chan error, 1)
 	go func() {
@@ -206,10 +281,25 @@ esac`, release)
 	}
 }
 
+func fakeRunNoSuchImage(c fakeCall) int {
+	if c.arg(1) == "run" {
+		_, _ = fmt.Fprintln(c.stderr, "no such image")
+		return 125
+	}
+	return 0
+}
+
+func fakeRunExits7(c fakeCall) int {
+	if c.arg(1) == "run" {
+		return 7
+	}
+	return 0
+}
+
 func TestDriveDoesNotReportDockersFailureAsTheSuites(t *testing.T) {
 	t.Parallel()
 
-	c := fakeDocker(t, `[ "$1" = run ] && { echo "no such image" >&2; exit 125; }; exit 0`)
+	c := fakeDocker(t, "run-no-such-image", nil)
 	result, err := c.Drive(t.Context(), DriveSpec{Image: "gone:1"},
 		target.RunOpts{Stdout: io.Discard, Stderr: io.Discard})
 	if err == nil {
@@ -223,7 +313,7 @@ func TestDriveDoesNotReportDockersFailureAsTheSuites(t *testing.T) {
 func TestDriveKeepsTheSuitesOwnExitCode(t *testing.T) {
 	t.Parallel()
 
-	c := fakeDocker(t, `[ "$1" = run ] && exit 7; exit 0`)
+	c := fakeDocker(t, "run-exits-7", nil)
 	result, err := c.Drive(t.Context(), DriveSpec{Image: "suite:1"},
 		target.RunOpts{Stdout: io.Discard, Stderr: io.Discard})
 	if err != nil {
@@ -231,6 +321,61 @@ func TestDriveKeepsTheSuitesOwnExitCode(t *testing.T) {
 	}
 	if result.RC != 7 {
 		t.Errorf("RC = %d, want the suite's own 7", result.RC)
+	}
+}
+
+// fakeRemoteDrive logs every command. Inbound docker cp consumes the archive
+// and lists what it carried, as tar -t does. Outbound docker cp stands in for
+// the daemon by leaving the evidence where the runner asked for it.
+func fakeRemoteDrive(c fakeCall) int {
+	if err := appendLine(c.params["log"], strings.Join(c.args, " ")); err != nil {
+		return 1
+	}
+	if c.arg(1) == "cp" && c.arg(2) == "-" {
+		names, err := tarNames(c.stdin)
+		if err != nil {
+			_, _ = fmt.Fprintln(c.stderr, err)
+		}
+		for _, name := range names {
+			if err := appendLine(c.params["tar-log"], name); err != nil {
+				return 1
+			}
+		}
+		return 0
+	}
+	if c.arg(1) == "cp" && strings.HasSuffix(c.arg(2), ":/workspace/.") {
+		facts := filepath.Join(c.arg(3), ".testease-facts")
+		if err := os.WriteFile(facts, []byte("fact\tremote.drive\treturned\n"), 0o644); err != nil {
+			return 1
+		}
+	}
+	return 0
+}
+
+func appendLine(path, line string) error {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	if _, err := f.WriteString(line + "\n"); err != nil {
+		_ = f.Close()
+		return err
+	}
+	return f.Close()
+}
+
+func tarNames(r io.Reader) ([]string, error) {
+	var names []string
+	tr := tar.NewReader(r)
+	for {
+		h, err := tr.Next()
+		if errors.Is(err, io.EOF) {
+			return names, nil
+		}
+		if err != nil {
+			return names, err
+		}
+		names = append(names, h.Name)
 	}
 }
 
@@ -252,18 +397,7 @@ func TestRemoteDriveCarriesItsScenarioAndEvidenceAcrossTheContext(t *testing.T) 
 
 	// Inbound docker cp consumes the archive. Outbound docker cp stands in for
 	// the daemon by leaving the evidence where the runner asked for it.
-	script := `printf '%s\n' "$*" >> "` + log + `"
-if [ "$1" = cp ] && [ "$2" = - ]; then
-  tar -tf - >> "` + tarLog + `"
-  exit 0
-fi
-if [ "$1" = cp ] && [[ "$2" == *:/workspace/. ]]; then
-  printf 'fact\tremote.drive\treturned\n' > "$3/.testease-facts"
-  exit 0
-fi
-if [ "$1" = start ]; then exit 0; fi
-exit 0`
-	c := fakeDocker(t, script)
+	c := fakeDocker(t, "remote-drive", map[string]string{"log": log, "tar-log": tarLog})
 	result, err := c.DriveRemote(t.Context(), DriveSpec{
 		Image:         "suite:1",
 		Workspace:     workspace,
@@ -316,14 +450,24 @@ exit 0`
 	}
 }
 
+// fakeRemoteDriveLosesIt takes the inbound archive and cannot return the
+// workspace.
+func fakeRemoteDriveLosesIt(c fakeCall) int {
+	if c.arg(1) == "cp" && c.arg(2) == "-" {
+		_, _ = io.Copy(io.Discard, c.stdin)
+		return 0
+	}
+	if c.arg(1) == "cp" && strings.HasSuffix(c.arg(2), ":/workspace/.") {
+		return 1
+	}
+	return 0
+}
+
 func TestRemoteDriveDoesNotMeasureASuiteWhoseEvidenceCannotReturn(t *testing.T) {
 	t.Parallel()
 
 	workspace := t.TempDir()
-	c := fakeDocker(t, `
-if [ "$1" = cp ] && [ "$2" = - ]; then cat >/dev/null; exit 0; fi
-if [ "$1" = cp ] && [[ "$2" == *:/workspace/. ]]; then exit 1; fi
-exit 0`)
+	c := fakeDocker(t, "remote-drive-loses-it", nil)
 	result, err := c.DriveRemote(t.Context(), DriveSpec{
 		Image: "suite:1", Workspace: workspace, Mount: "/workspace",
 	}, target.RunOpts{Stdout: io.Discard, Stderr: io.Discard})
@@ -369,16 +513,25 @@ func TestTheWindowsExistsProbeKeepsThePathInOneArgument(t *testing.T) {
 	}
 }
 
+// fakeSHA256Sum answers the container's sha256sum, the third argument of
+// `docker exec box sha256sum <path>`.
+func fakeSHA256Sum(c fakeCall) int {
+	switch c.arg(3) {
+	case "sha256sum":
+		_, _ = fmt.Fprintln(c.stdout, c.params["sum"]+"  /mounted/input")
+		return 0
+	case "inspect":
+		_, _ = fmt.Fprintln(c.stdout, "true")
+		return 0
+	}
+	return 1
+}
+
 func TestSHA256ReadsTheFileSeenByTheContainer(t *testing.T) {
 	t.Parallel()
 
 	want := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-	script := `case "$3" in
-sha256sum) echo "` + want + `  /mounted/input"; exit 0;;
-inspect) echo true; exit 0;;
-*) exit 1;;
-esac`
-	s := &Session{Client: fakeDocker(t, script), Container: "box"}
+	s := &Session{Client: fakeDocker(t, "sha256sum", map[string]string{"sum": want}), Container: "box"}
 	got, err := s.SHA256(t.Context(), "/mounted/input")
 	if err != nil {
 		t.Fatalf("SHA256: %v", err)
@@ -388,13 +541,20 @@ esac`
 	}
 }
 
+func fakeRecordArgs(c fakeCall) int {
+	if err := os.WriteFile(c.params["args"], []byte(strings.Join(c.args, " ")+"\n"), 0o644); err != nil {
+		return 1
+	}
+	return 0
+}
+
 func TestPutOnAWindowsContainerSpeaksPowerShell(t *testing.T) {
 	t.Parallel()
 
 	// A Windows container has no sh and no cat: a Put spelled through them
 	// fails on exactly the containers the OS field exists to describe.
 	argFile := filepath.Join(t.TempDir(), "args")
-	c := fakeDocker(t, `echo "$@" > `+argFile+`; exit 0`)
+	c := fakeDocker(t, "record-args", map[string]string{"args": argFile})
 
 	s := &Session{Client: c, Container: "box", OS: Windows}
 	if err := s.Put(t.Context(), strings.NewReader("hello"), `C:\dest.txt`, 0o644); err != nil {
@@ -423,11 +583,17 @@ func TestPutOnAWindowsContainerSpeaksPowerShell(t *testing.T) {
 // exits 125 with "Conflict. The container name ... is already in use". The
 // refusal is right; without the remedy it reads as a daemon problem rather than
 // as the earlier attempt's box waiting to be collected.
+// fakeNameConflict refuses every command as docker refuses a taken name.
+func fakeNameConflict(c fakeCall) int {
+	_, _ = fmt.Fprintln(c.stderr, c.params["message"])
+	return 125
+}
+
 func TestAKeptContainerBlockingItsOwnResumeSaysHowToClearIt(t *testing.T) {
 	t.Parallel()
 
-	conflict := `echo 'docker: Error response from daemon: Conflict. The container name "/testease-run-box" is already in use by container "2ee35e39b1b5". You have to remove (or rename) that container to be able to reuse that name.' >&2; exit 125`
-	c := fakeDocker(t, conflict)
+	conflict := `docker: Error response from daemon: Conflict. The container name "/testease-run-box" is already in use by container "2ee35e39b1b5". You have to remove (or rename) that container to be able to reuse that name.`
+	c := fakeDocker(t, "name-conflict", map[string]string{"message": conflict})
 
 	err := c.Up(t.Context(), Launch{Name: "testease-run-box", Image: "neutral:1", Network: "net", Alias: "box"})
 	if err == nil {
@@ -448,8 +614,8 @@ func TestAKeptContainerBlockingItsOwnResumeSaysHowToClearIt(t *testing.T) {
 func TestTheRemedyNamesTheContextTheKeptBoxIsOn(t *testing.T) {
 	t.Parallel()
 
-	conflict := `echo 'docker: Error response from daemon: Conflict. The container name "/testease-run-box" is already in use by container "2ee35e39b1b5".' >&2; exit 125`
-	c := fakeDocker(t, conflict)
+	conflict := `docker: Error response from daemon: Conflict. The container name "/testease-run-box" is already in use by container "2ee35e39b1b5".`
+	c := fakeDocker(t, "name-conflict", map[string]string{"message": conflict})
 	c.Context = "winhost"
 
 	err := c.Up(t.Context(), Launch{Name: "testease-run-box", Image: "neutral:1", Network: "net", Alias: "box"})
@@ -468,15 +634,22 @@ func TestTheRemedyNamesTheContextTheKeptBoxIsOn(t *testing.T) {
 // removed mid-listing does not hide the survivors, but tolerating a TOTAL
 // failure hands back an empty map and a nil error, and reap then prints
 // "nothing to reap" over leftovers that are still standing.
+func fakeInspectDescribesNone(c fakeCall) int {
+	switch c.arg(1) {
+	case "ps":
+		_, _ = fmt.Fprint(c.stdout, "testease-a-box\ntestease-b-box\ntestease-c-box\n")
+		return 0
+	case "inspect":
+		_, _ = fmt.Fprintln(c.stderr, "Cannot connect to the Docker daemon")
+		return 1
+	}
+	return 0
+}
+
 func TestAnInspectThatDescribedNothingIsNotAnEmptyDaemon(t *testing.T) {
 	t.Parallel()
 
-	c := fakeDocker(t, `
-case "$1" in
-  ps)      printf 'testease-a-box\ntestease-b-box\ntestease-c-box\n'; exit 0;;
-  inspect) echo 'Cannot connect to the Docker daemon' >&2; exit 1;;
-esac
-exit 0`)
+	c := fakeDocker(t, "inspect-describes-none", nil)
 
 	found, err := c.Labelled(t.Context(), "testease.run")
 	if err == nil {
@@ -488,15 +661,23 @@ exit 0`)
 // container removed between the listing and the inspect makes the whole call
 // non-zero, and losing the survivors to it is the reason the error is
 // tolerated in the first place.
+func fakeInspectDescribesSome(c fakeCall) int {
+	switch c.arg(1) {
+	case "ps":
+		_, _ = fmt.Fprint(c.stdout, "testease-a-box\ntestease-b-box\n")
+		return 0
+	case "inspect":
+		_, _ = fmt.Fprint(c.stdout, "testease-a-box\t{\"testease.run\":\"r1\"}\n")
+		_, _ = fmt.Fprintln(c.stderr, "No such object: testease-b-box")
+		return 1
+	}
+	return 0
+}
+
 func TestAPartlyDescribedListingKeepsTheSurvivors(t *testing.T) {
 	t.Parallel()
 
-	c := fakeDocker(t, `
-case "$1" in
-  ps)      printf 'testease-a-box\ntestease-b-box\n'; exit 0;;
-  inspect) printf 'testease-a-box\t{"testease.run":"r1"}\n'; echo 'No such object: testease-b-box' >&2; exit 1;;
-esac
-exit 0`)
+	c := fakeDocker(t, "inspect-describes-some", nil)
 
 	found, err := c.Labelled(t.Context(), "testease.run")
 	if err != nil {

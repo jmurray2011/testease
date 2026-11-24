@@ -194,15 +194,15 @@ func (r *sparkRenderer) Objects() []fyne.CanvasObject {
 }
 func (r *sparkRenderer) Destroy() {}
 
-// quantity says whether a fact's numbers measure an amount. A status or exit
-// code names an outcome, and a line between two codes means nothing.
+// quantity says whether a fact's numbers measure an amount. A status, exit or
+// HTTP code names an outcome, and a line between two codes means nothing.
 func quantity(key string) bool {
 	words := strings.FieldsFunc(strings.ToLower(key), func(r rune) bool { return r == '.' || r == '_' || r == '-' })
 	if len(words) == 0 {
 		return true
 	}
 	switch words[len(words)-1] {
-	case "status", "code", "rc", "exit":
+	case "status", "code", "rc", "exit", "http":
 		return false
 	}
 	return true

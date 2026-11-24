@@ -81,7 +81,7 @@ func TestTheFactsTabShowsATrendFromEarlierRuns(t *testing.T) {
 // A status or exit code is a name for an outcome, not a quantity: it is not
 // drawn as a line.
 func TestCodesAreNotDrawnAsQuantities(t *testing.T) {
-	for _, key := range []string{"http.status", "probe.status_code", "exit_code", "step.rc"} {
+	for _, key := range []string{"http.status", "probe.status_code", "exit_code", "step.rc", "upgrade.analyses_platform_key_http"} {
 		if quantity(key) {
 			t.Errorf("%s is drawn as a quantity", key)
 		}

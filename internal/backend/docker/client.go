@@ -89,8 +89,18 @@ func (c Client) command(ctx context.Context, args ...string) *exec.Cmd {
 
 	// Redacted: an env value in a log line is an env value in CI output.
 	c.log().Debug("docker", "args", redact(full))
-	return exec.CommandContext(ctx, c.bin(), full...)
+	cmd := exec.CommandContext(ctx, c.bin(), full...)
+	// docker reaches an ssh context through a child ssh, which can outlive a
+	// killed docker while it waits for a password nobody will type, holding
+	// docker's output open. Without a bound, giving up on the daemon would
+	// wait for that child forever.
+	cmd.WaitDelay = outputGrace
+	return cmd
 }
+
+// outputGrace is how long a finished or killed docker's output may stay open
+// before it is closed regardless.
+const outputGrace = 5 * time.Second
 
 // Output runs a docker command and returns its stdout, with stderr folded into
 // the error so a failure says what docker said about it.

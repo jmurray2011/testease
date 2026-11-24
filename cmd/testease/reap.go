@@ -1,13 +1,16 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -85,7 +88,9 @@ func doReap(cmd *cobra.Command, _ []string) error {
 	var targets, networks []reap.Target
 	for _, dockerContext := range contexts {
 		client := backend.Client{Context: dockerContext, Log: log}
-		found, err := client.Labelled(cmd.Context(), reap.LabelRunner)
+		found, err := askContext(cmd.Context(), func(ctx context.Context) (map[string]map[string]string, error) {
+			return client.Labelled(ctx, reap.LabelRunner)
+		})
 		if err != nil {
 			report.Notices = append(report.Notices,
 				fmt.Sprintf("skipped %s: %v", describeContext(dockerContext), err))
@@ -102,7 +107,9 @@ func doReap(cmd *cobra.Command, _ []string) error {
 		// it. Docker refuses to remove one with containers still attached, so a
 		// live cell's network is safe from this by the daemon rather than by a
 		// count kept here.
-		nets, err := client.LabelledNetworks(cmd.Context(), reap.LabelRunner)
+		nets, err := askContext(cmd.Context(), func(ctx context.Context) (map[string]map[string]string, error) {
+			return client.LabelledNetworks(ctx, reap.LabelRunner)
+		})
 		if err != nil {
 			report.Notices = append(report.Notices,
 				fmt.Sprintf("could not list networks on %s: %v", describeContext(dockerContext), err))
@@ -345,6 +352,22 @@ func or(v, fallback string) string {
 		return fallback
 	}
 	return v
+}
+
+// contextBudget is how long one docker context gets to answer a look. A
+// context reached over ssh can wait forever for a password nobody will type,
+// and one that does must not hold up the rest.
+var contextBudget = 30 * time.Second
+
+// askContext asks one docker context something, within contextBudget.
+func askContext[T any](ctx context.Context, ask func(context.Context) (T, error)) (T, error) {
+	ctx, cancel := context.WithTimeout(ctx, contextBudget)
+	defer cancel()
+	v, err := ask(ctx)
+	if err != nil && errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return v, fmt.Errorf("no answer within %s", contextBudget)
+	}
+	return v, err
 }
 
 // dockerContexts is where to look for standing targets. Named contexts win; the

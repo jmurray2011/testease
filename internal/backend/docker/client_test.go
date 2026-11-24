@@ -95,6 +95,47 @@ var fakeBehaviours = map[string]fakeexec.Behaviour{
 	"inspect-describes-some":   fakeInspectDescribesSome,
 	"exec-streams-then-sleeps": fakeExecStreamsThenSleeps,
 	"exec-fails-late":          fakeExecFailsLate,
+	"hangs-with-child":         fakeHangsWithChild,
+}
+
+// fakeHangsWithChild is a docker whose ssh never gets an answer: it starts a
+// child that holds its output open, the way docker's ssh helper does while it
+// waits for a password, and neither ever finishes.
+func fakeHangsWithChild(c fakeexec.Call) int {
+	if c.Arg(1) == "child" {
+		time.Sleep(20 * time.Second)
+		return 0
+	}
+	self, err := os.Executable()
+	if err != nil {
+		return 1
+	}
+	child := exec.Command(self, "child") //nolint:gosec // the fake itself
+	child.Stdout, child.Stderr = os.Stdout, os.Stderr
+	if err := child.Start(); err != nil {
+		return 1
+	}
+	time.Sleep(20 * time.Second)
+	return 0
+}
+
+// A daemon that never answers is given up on when its time is up, even when
+// docker left a child holding its output: one unreachable context must not
+// hold up a look at the others.
+func TestADaemonThatNeverAnswersIsGivenUpOn(t *testing.T) {
+	t.Parallel()
+
+	c := fakeDocker(t, "hangs-with-child", nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	_, err := c.Labelled(ctx, "testease.runner")
+	if err == nil {
+		t.Fatal("a daemon that never answered was read as empty")
+	}
+	if took := time.Since(start); took > 12*time.Second {
+		t.Errorf("gave up after %v, want within the wait budget", took)
+	}
 }
 
 // 125 is the docker CLI's own failure code: the daemon refused or never

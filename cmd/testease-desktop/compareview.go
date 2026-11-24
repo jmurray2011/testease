@@ -10,6 +10,7 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
@@ -31,6 +32,10 @@ type compareView struct {
 	shown    []diffRow
 	onlyDiff *widget.Check
 	table    *widget.Table
+	// empty says so when nothing differs and only differences are asked for.
+	empty *widget.Label
+	// runWidth is each run's column: wide enough for its id in full.
+	runWidth float32
 	window   fyne.Window
 	// reproduce asks the reproduce judge whether the runs' stable facts
 	// agree; it is offered only for runs of one scenario.
@@ -93,13 +98,19 @@ func newCompareView(dirs []string, backLabel string, back func()) (*compareView,
 	}
 	v.fit()
 
+	v.empty = widget.NewLabel("Nothing differs. Untick Only what differs to see every row.")
+	v.empty.Importance = widget.LowImportance
+	v.empty.Hide()
+
+	// The checkbox stays at the right edge whether or not reproduce is
+	// offered, so it is never where the button was.
 	title := fmt.Sprintf("Compare %d runs", len(v.sides))
-	top := backHeader(backLabel, back, title, v.onlyDiff, v.reproduce.Button)
+	top := backHeader(backLabel, back, title, v.reproduce.Button, v.onlyDiff)
 	foot := note("Runs are oldest first. A highlighted value differs from the first run's. Tap a row to read its values in full. Secrets are compared but not shown.")
 	v.content = container.NewBorder(
 		container.NewVBox(container.NewPadded(container.NewVBox(top, summary)), widget.NewSeparator()),
 		container.NewVBox(widget.NewSeparator(), foot),
-		nil, nil, v.table,
+		nil, nil, container.NewStack(v.table, container.NewVBox(layout.NewSpacer(), container.NewCenter(v.empty), layout.NewSpacer())),
 	)
 	v.onlyDiff.SetChecked(true)
 	return v, nil
@@ -131,6 +142,11 @@ func (v *compareView) apply() {
 		v.shown = append(v.shown, diffRow{Section: sec, heading: true})
 		v.shown = append(v.shown, rows...)
 	}
+	if len(v.shown) == 0 {
+		v.empty.Show()
+	} else {
+		v.empty.Hide()
+	}
 	v.table.Refresh()
 }
 
@@ -144,8 +160,15 @@ func (v *compareView) fit() {
 		}
 	}
 	v.table.SetColumnWidth(0, min(w, compareNameMax))
+	v.runWidth = compareRun
+	for _, s := range v.sides {
+		if m := fyne.MeasureText(s.d.RunID, theme.TextSize(), fyne.TextStyle{Monospace: true}).Width + pad; m > v.runWidth {
+			v.runWidth = m
+		}
+	}
+	v.runWidth = min(v.runWidth, fitCap)
 	for i := range v.sides {
-		v.table.SetColumnWidth(i+1, compareRun)
+		v.table.SetColumnWidth(i+1, v.runWidth)
 	}
 }
 

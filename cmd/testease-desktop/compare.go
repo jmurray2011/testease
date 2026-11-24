@@ -370,7 +370,7 @@ func valuesLine(r diffRow, runs int) string {
 		vals[i] = orDash(v)
 	}
 	if runs == 2 {
-		return r.Name + ": " + vals[0] + " → " + vals[1]
+		return r.Name + ": " + vals[0] + ", then " + vals[1]
 	}
 	var once []string
 	for _, v := range vals {

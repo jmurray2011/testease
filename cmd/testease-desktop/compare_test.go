@@ -5,7 +5,10 @@ import (
 	"strings"
 	"testing"
 
+	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/test"
+	"fyne.io/fyne/v2/theme"
+	"fyne.io/fyne/v2/widget"
 
 	"github.com/jmurray2011/testease/internal/browse"
 	"github.com/jmurray2011/testease/internal/record"
@@ -135,10 +138,10 @@ func TestTheExplanationSaysWhatWentInBeforeWhatCameOut(t *testing.T) {
 		probe("probe-fail", 1, 2, fact("http.status", "503")))
 	b.d.Status = string(record.StatusProbeFail)
 	in, out := explain(diffRuns([]side{a, b}), 2)
-	if want := []string{"Tool: 0.3.0 → 0.4.0", "1 param differs: region"}; !slices.Equal(in, want) {
+	if want := []string{"Tool: 0.3.0, then 0.4.0", "1 param differs: region"}; !slices.Equal(in, want) {
 		t.Errorf("went in %q, want %q", in, want)
 	}
-	if want := []string{"1 step result differs: probe api", "1 fact differs: probe api · http.status", "Status: measured → probe-fail"}; !slices.Equal(out, want) {
+	if want := []string{"1 step result differs: probe api", "1 fact differs: probe api · http.status", "Status: measured, then probe-fail"}; !slices.Equal(out, want) {
 		t.Errorf("came out %q, want %q", out, want)
 	}
 }
@@ -247,5 +250,39 @@ func TestTheRunsScreenComparesTheRunsPicked(t *testing.T) {
 	}
 	if got := len(s.runs.shown); got != 2 {
 		t.Fatalf("%d runs shown", got)
+	}
+}
+
+func TestThePickerShowsManyRunsAtOnce(t *testing.T) {
+	test.NewTempApp(t)
+	ids := make([]string, 14)
+	for i := range ids {
+		ids[i] = "vt7-operations-202611" + string(rune('a'+i))
+	}
+	list := pickerList(widget.NewCheckGroup(ids, nil))
+	if h := list.MinSize().Height; h < 280 {
+		t.Errorf("picker is %v tall", h)
+	}
+}
+
+func TestNothingDifferingSaysSoAndEachRunIsNamedInFull(t *testing.T) {
+	test.NewTempApp(t)
+	runs := t.TempDir()
+	a := installCheck(t, runs, "install-check-20261121T080000Z-a-rather-long-suffix")
+	b := installCheck(t, runs, "install-check-20261122T080000Z-a-rather-long-suffix")
+	v, err := newCompareView([]string{a, b}, "Runs", func() {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(v.shown) != 0 || v.empty.Hidden {
+		t.Errorf("%d rows shown, empty note hidden: %v", len(v.shown), v.empty.Hidden)
+	}
+	v.onlyDiff.SetChecked(false)
+	if !v.empty.Hidden {
+		t.Error("empty note shown over every row")
+	}
+	id := fyne.MeasureText(v.sides[0].d.RunID, theme.TextSize(), fyne.TextStyle{Monospace: true}).Width
+	if w := v.runWidth; w < id {
+		t.Errorf("run column %v, id %v", w, id)
 	}
 }

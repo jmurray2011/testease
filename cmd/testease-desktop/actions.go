@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"image/color"
 	"os"
 	"path/filepath"
 	"slices"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/storage"
@@ -339,7 +341,7 @@ func (s *shell) pickRuns(title, hint string, candidates []browse.Run, least int,
 		checks.SetSelected(ids[:1])
 	}
 	form := dialog.NewForm(title, "Compare", "Cancel", []*widget.FormItem{
-		{Text: "Runs", Widget: container.NewVScroll(checks), HintText: hint},
+		{Text: "Runs", Widget: pickerList(checks), HintText: hint},
 	}, func(ok bool) {
 		if !ok {
 			return
@@ -358,6 +360,14 @@ func (s *shell) pickRuns(title, hint string, candidates []browse.Run, least int,
 	}, s.window)
 	form.Resize(fyne.NewSize(620, 420))
 	form.Show()
+}
+
+// pickerList holds a list of runs to pick from at a height that shows a dozen
+// of them, not the one row a scroll asks for on its own.
+func pickerList(checks *widget.CheckGroup) fyne.CanvasObject {
+	room := canvas.NewRectangle(color.Transparent)
+	room.SetMinSize(fyne.NewSize(520, 320))
+	return container.NewStack(room, container.NewVScroll(checks))
 }
 
 // compareRecords puts runs side by side. Runs of one scenario can also be

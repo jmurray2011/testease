@@ -317,3 +317,56 @@ func splitLines(s string) []string {
 	}
 	return out
 }
+
+func TestWriterLockedReportsAHeldRecordUntilItCloses(t *testing.T) {
+	t.Parallel()
+
+	w, dir := openRun(t)
+	locked, err := record.WriterLocked(dir)
+	if err != nil {
+		t.Fatalf("WriterLocked while held: %v", err)
+	}
+	if !locked {
+		t.Fatal("WriterLocked = false while a writer holds the record")
+	}
+
+	if err := w.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	locked, err = record.WriterLocked(dir)
+	if err != nil {
+		t.Fatalf("WriterLocked after close: %v", err)
+	}
+	if locked {
+		t.Error("WriterLocked = true after the writer closed")
+	}
+}
+
+// A record is read while it is being written: judge, render, follow and
+// status all open a live run. The writer's lock must exclude other writers
+// and nothing else, so a platform whose locks cover bytes must not lock the
+// bytes a reader needs.
+func TestAHeldRecordStaysReadable(t *testing.T) {
+	t.Parallel()
+
+	w, dir := openRun(t)
+	if _, err := w.Emit(record.KindRunStarted, 0, record.RunStarted{
+		RunID:  filepath.Base(dir),
+		Driver: record.DriverManifest,
+		Host:   record.HostRef{User: "someone", Hostname: "labhost", PID: os.Getpid()},
+	}); err != nil {
+		t.Fatalf("Emit: %v", err)
+	}
+
+	rec, err := record.Read(dir)
+	if err != nil {
+		t.Fatalf("Read while held: %v", err)
+	}
+	if len(rec.Events) != 1 {
+		t.Errorf("events = %d, want 1", len(rec.Events))
+	}
+
+	if _, err := w.Emit(record.KindProbeProgress, 1, record.ProbeProgress{Key: "http.status", Value: "200"}); err != nil {
+		t.Fatalf("Emit after a reader: %v", err)
+	}
+}

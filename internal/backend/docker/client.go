@@ -95,6 +95,7 @@ func (c Client) command(ctx context.Context, args ...string) *exec.Cmd {
 	// docker's output open. Without a bound, giving up on the daemon would
 	// wait for that child forever.
 	cmd.WaitDelay = outputGrace
+	cmd.Cancel = func() error { return stopTree(cmd) }
 	return cmd
 }
 
@@ -672,6 +673,20 @@ func (c Client) Contexts(ctx context.Context) ([]string, error) {
 		return nil, err
 	}
 	return nonEmptyLines(out), nil
+}
+
+// DaemonID is the daemon's own ID: two contexts that reach one daemon get the
+// same one.
+func (c Client) DaemonID(ctx context.Context) (string, error) {
+	out, err := c.Output(ctx, "info", "--format", "{{.ID}}")
+	if err != nil {
+		return "", err
+	}
+	id := strings.TrimSpace(out)
+	if id == "" {
+		return "", errors.New("the daemon gave no ID")
+	}
+	return id, nil
 }
 
 // Labelled lists every container this daemon holds that carries a label,

@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -96,6 +97,25 @@ var fakeBehaviours = map[string]fakeexec.Behaviour{
 	"exec-streams-then-sleeps": fakeExecStreamsThenSleeps,
 	"exec-fails-late":          fakeExecFailsLate,
 	"hangs-with-child":         fakeHangsWithChild,
+	"info-id":                  fakeInfoID,
+}
+
+func fakeInfoID(c fakeexec.Call) int {
+	if c.Arg(1) == "info" {
+		_, _ = fmt.Fprintln(c.Stdout, "DAEMON-A")
+		return 0
+	}
+	return 1
+}
+
+// A daemon names itself; two contexts reaching it get the same name back.
+func TestADaemonSaysWhichDaemonItIs(t *testing.T) {
+	t.Parallel()
+
+	id, err := fakeDocker(t, "info-id", nil).DaemonID(context.Background())
+	if err != nil || id != "DAEMON-A" {
+		t.Errorf("id = %q, %v", id, err)
+	}
 }
 
 // fakeHangsWithChild is a docker whose ssh never gets an answer: it starts a
@@ -114,6 +134,9 @@ func fakeHangsWithChild(c fakeexec.Call) int {
 	child.Stdout, child.Stderr = os.Stdout, os.Stderr
 	if err := child.Start(); err != nil {
 		return 1
+	}
+	if f := c.Params["pidfile"]; f != "" {
+		_ = os.WriteFile(f, []byte(strconv.Itoa(child.Process.Pid)), 0o600)
 	}
 	time.Sleep(20 * time.Second)
 	return 0

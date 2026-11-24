@@ -370,6 +370,28 @@ func askContext[T any](ctx context.Context, ask func(context.Context) (T, error)
 	return v, err
 }
 
+// distinctDaemons keeps the first context that reaches each daemon. Two
+// contexts can reach one daemon, and looking through both would list, and
+// then remove, every target twice. A context that does not answer is said
+// rather than looked through again.
+func distinctDaemons(names []string, idOf func(string) (string, error)) ([]string, []string) {
+	var kept, notices []string
+	seen := map[string]bool{}
+	for _, name := range names {
+		id, err := idOf(name)
+		if err != nil {
+			notices = append(notices, fmt.Sprintf("skipped %s: %v", describeContext(name), err))
+			continue
+		}
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		kept = append(kept, name)
+	}
+	return kept, notices
+}
+
 // dockerContexts is where to look for standing targets. Named contexts win; the
 // alternative is every context configured here, because a target on a daemon
 // nobody named is a leak nobody sees.
@@ -384,7 +406,9 @@ func dockerContexts(cmd *cobra.Command, log *slog.Logger) ([]string, []string) {
 		if err != nil {
 			return []string{""}, []string{"could not list docker contexts: " + err.Error()}
 		}
-		return names, nil
+		return distinctDaemons(names, func(name string) (string, error) {
+			return askContext(cmd.Context(), backend.Client{Context: name, Log: log}.DaemonID)
+		})
 	}
 	return []string{""}, nil
 }

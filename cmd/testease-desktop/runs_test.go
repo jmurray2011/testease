@@ -6,7 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/test"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
 	"github.com/jmurray2011/testease/internal/browse"
@@ -283,5 +285,22 @@ func TestARecordStillBeingWrittenReadsAsRunning(t *testing.T) {
 	v.reload()
 	if got := v.cellText(0, colStatus); got != string(record.StatusUnfinished) {
 		t.Errorf("status after the writer let go = %q, want unfinished", got)
+	}
+}
+
+// Run ids carry a scenario, a timestamp and sometimes a batch's name; a column
+// that cut them off would hide the one thing that tells two runs apart.
+func TestTheRunColumnFitsTheLongestRunID(t *testing.T) {
+	test.NewTempApp(t)
+
+	runs := t.TempDir()
+	long := "vtdocs-sysadmin-sso-landing-20261121T083545Z-install-old"
+	installCheck(t, runs, long)
+	installCheck(t, runs, "hello-20261121T083007Z")
+
+	v := newRunsView(runs, func(string) {})
+	need := fyne.MeasureText(long, theme.TextSize(), fyne.TextStyle{Monospace: true}).Width
+	if v.widths[colRun] < need {
+		t.Errorf("run column is %.0f wide, want at least %.0f for %s", v.widths[colRun], need, long)
 	}
 }

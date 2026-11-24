@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"path/filepath"
+	"testing"
+)
 
 // There is no config file. Where records are is flag, then TESTEASE_RUNS_DIR,
 // then the folder this app was last pointed at - a path is safe to remember,
@@ -24,5 +27,19 @@ func TestTheRunsDirectoryComesFromFlagThenEnvironmentThenMemory(t *testing.T) {
 			t.Errorf("resolveRunsDir(%q, %q, %q) = %q from %q, want %q from %q",
 				c.flag, c.env, c.remembered, got, from, c.want, c.from)
 		}
+	}
+}
+
+// The sidebar is narrow. A runs directory is shown by its last two folders,
+// whole, rather than wrapped mid-word.
+func TestTheSidebarShowsTheEndOfTheRunsDirectory(t *testing.T) {
+	t.Parallel()
+
+	long := filepath.Join(string(filepath.Separator)+"Users", "jmurr", "projects", "personal", "testease-scenarios", "scenario-runs")
+	if got, want := shortPath(long), "…"+string(filepath.Separator)+filepath.Join("testease-scenarios", "scenario-runs"); got != want {
+		t.Errorf("shortPath(%q) = %q, want %q", long, got, want)
+	}
+	if got := shortPath(filepath.Join("runs")); got != "runs" {
+		t.Errorf("a short path was shortened to %q", got)
 	}
 }

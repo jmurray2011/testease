@@ -54,10 +54,16 @@ type fakeCLI struct {
 func (f *fakeCLI) call(_ context.Context, args []string) ([]byte, error) {
 	f.asked = append(f.asked, args)
 	key := strings.Join(args, " ")
-	for k, v := range f.answers {
-		if strings.Contains(key, k) {
-			return []byte(v), nil
+	// The longest matching key wins, so "reap --force" beats "reap" whatever
+	// order the map gives.
+	best, found := "", false
+	for k := range f.answers {
+		if strings.Contains(key, k) && len(k) >= len(best) {
+			best, found = k, true
 		}
+	}
+	if found {
+		return []byte(f.answers[best]), nil
 	}
 	return []byte(`{"targets": [], "notices": []}`), nil
 }

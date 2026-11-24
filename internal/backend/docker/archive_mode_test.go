@@ -47,3 +47,33 @@ func TestARemoteDriveArchiveKeepsExecutableIntent(t *testing.T) {
 		t.Errorf("notes.txt mode = %o (present %v), want it not executable", mode, ok)
 	}
 }
+
+// The destination is a path in a Linux container, whatever the runner is. A
+// backslash there is part of a name, not a Windows separator to convert.
+func TestARemoteDriveArchiveKeepsTheContainerPathAsWritten(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "suite.sh"), []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	archive, err := directoryArchive(dir, `/srv/suite\one`, 1000, 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tr := tar.NewReader(bytes.NewReader(archive))
+	var names []string
+	for {
+		header, err := tr.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		names = append(names, header.Name)
+	}
+	if len(names) == 0 || names[0] != `srv/suite\one` {
+		t.Errorf("archive names = %q, want them under srv/suite\\one", names)
+	}
+}

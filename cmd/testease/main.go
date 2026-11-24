@@ -301,6 +301,11 @@ func sortStrings(s []string) { sort.Strings(s) }
 // stop scheduling, let what is in flight finish, and close its record saying
 // it was interrupted. A record that never says it was cut short reads exactly
 // like a complete one.
+//
+// Windows has no signals; Go delivers Ctrl+C and Ctrl+Break as os.Interrupt
+// and closing the console, logging off or shutting down as SIGTERM, so the
+// same two cover it. Measured: a run sent either key closed its record
+// interrupted and exited 12.
 func withSignals(cmd *cobra.Command) (context.CancelFunc, error) {
 	parent := cmd.Context()
 	if parent == nil {

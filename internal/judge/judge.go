@@ -111,9 +111,15 @@ type Evidence struct {
 type NothingToJudgeError struct {
 	Judge    string
 	Unjudged map[string]string
+	// Reason, when set, is why there was nothing, said in place of the
+	// unmeasured steps: a judge with no expectations to weigh at all.
+	Reason string
 }
 
 func (e *NothingToJudgeError) Error() string {
+	if e.Reason != "" {
+		return fmt.Sprintf("%s has nothing to judge: %s", e.Judge, e.Reason)
+	}
 	if len(e.Unjudged) == 0 {
 		return fmt.Sprintf("%s has nothing to judge: this record declares no expectations", e.Judge)
 	}

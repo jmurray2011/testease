@@ -244,6 +244,7 @@ func (s *shell) openCampaign(id string) {
 	var v *campaignView
 	back := func() { v.returned(); s.show(v, v.content) }
 	v = newCampaignView(s.dir, id, s.showCampaigns, func(rec string) { s.openRecord(rec, "Campaign", back) })
+	v.pack.set(func() { s.startJob("package "+id, packageArgs(s.dir, id)) })
 	s.highlight(sectionCampaigns)
 	s.show(v, v.content)
 }
@@ -257,11 +258,9 @@ func (s *shell) openRecord(dir, from string, back func()) {
 		return
 	}
 	v.onOpenCell = func(cell string) { s.openRecord(cell, "Matrix", func() { s.show(v, v.content) }) }
-	v.judge.set(func() {
-		if jv := s.startJob("judge "+filepath.Base(dir), judgeArgs(s.dir, dir)); jv != nil {
-			jv.record = dir
-		}
-	})
+	v.judge.set(func() { s.startRecordJob(dir, "judge "+filepath.Base(dir), judgeArgs(s.dir, dir)) })
+	v.render.set(func() { s.chooseRender(dir) })
+	v.compare.set(func() { s.chooseCompare(dir) })
 	s.show(v, v.content)
 }
 

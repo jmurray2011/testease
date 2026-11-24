@@ -1,11 +1,17 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/storage"
+	"fyne.io/fyne/v2/widget"
+
+	"github.com/jmurray2011/testease/internal/browse"
+	"github.com/jmurray2011/testease/internal/record"
 )
 
 // judgeArgs reads a saved record again. With no --judge, testease uses the
@@ -120,4 +126,100 @@ func lastFolder(key string) fyne.ListableURI {
 func overridesValid(text string) error {
 	_, err := runRequest{Extra: text}.extra()
 	return err
+}
+
+// startFolder is where a picker opens: where it was last used, or home.
+func startFolder(key string) fyne.ListableURI {
+	if l := lastFolder(key); l != nil {
+		return l
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+	l, err := storage.ListerForURI(storage.NewFileURI(home))
+	if err != nil {
+		return nil
+	}
+	return l
+}
+
+// overridesEntry is where a campaign's overrides are typed, one flag a line.
+// A line that is not a flag is flagged as it is typed.
+func overridesEntry() *widget.Entry {
+	e := widget.NewMultiLineEntry()
+	e.SetPlaceHolder("--repeat=3\n--target=lab-box")
+	e.SetMinRowsVisible(4)
+	e.Validator = overridesValid
+	e.AlwaysShowValidationError = true
+	return e
+}
+
+// The views render has for any record, after the ones a scenario recorded.
+var builtinViews = []string{"table", "tsv", "rows", "meta"}
+
+const recordedSuffix = " (recorded)"
+
+// renderChoices is what Render offers for a record: the views its scenario
+// recorded, by name, then the built-in ones.
+func renderChoices(dir string) []string {
+	var names []string
+	if rec, err := record.Read(dir); err == nil {
+		for _, e := range rec.Latest().Events {
+			if e.Kind != record.KindRunStarted {
+				continue
+			}
+			if started, err := record.Decode[record.RunStarted](e); err == nil {
+				for name := range started.Views {
+					names = append(names, name+recordedSuffix)
+				}
+			}
+		}
+	}
+	sort.Strings(names)
+	return append(names, builtinViews...)
+}
+
+// renderArgs renders a record with a choice renderChoices offered.
+func renderArgs(runsDir, dir, choice string) []string {
+	args := []string{"--runs-dir", runsDir, "render", dir}
+	if name, ok := strings.CutSuffix(choice, recordedSuffix); ok {
+		return append(args, "--preset", name)
+	}
+	return append(args, "--view", choice)
+}
+
+// compareCandidates is the other records of the same scenario, newest first:
+// what a record can sensibly be compared with.
+func compareCandidates(runsDir, dir string) []browse.Run {
+	all, err := browse.List(runsDir)
+	if err != nil {
+		return nil
+	}
+	var scenario string
+	for _, r := range all {
+		if filepath.Clean(r.Dir) == filepath.Clean(dir) {
+			scenario = r.Scenario
+		}
+	}
+	var out []browse.Run
+	for _, r := range all {
+		if scenario != "" && r.Scenario == scenario && filepath.Clean(r.Dir) != filepath.Clean(dir) {
+			out = append(out, r)
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool { return takenAt(out[i].RunID) > takenAt(out[j].RunID) })
+	return out
+}
+
+// compareArgs asks reproduce which stable facts differ between a record and
+// the others picked.
+func compareArgs(runsDir, dir string, others []string) []string {
+	return append([]string{"--runs-dir", runsDir, "reproduce", dir}, others...)
+}
+
+// packageArgs writes an archive of a campaign's records beneath the runs
+// directory.
+func packageArgs(runsDir, id string) []string {
+	return []string{"--runs-dir", runsDir, "package", id}
 }

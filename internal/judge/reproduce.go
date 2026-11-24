@@ -47,8 +47,9 @@ func ApplyReproduce(recs []*record.Record) (Verdict, error) {
 	facts := slices.Clone(views[0].stable)
 	sort.Strings(facts)
 	if len(facts) == 0 {
-		return Verdict{}, &NothingToJudgeError{Judge: ReproduceName, Unjudged: map[string]string{
-			"stable_facts": "the records declare no stable facts",
+		const reason = "the records declare no stable facts"
+		return Verdict{}, &NothingToJudgeError{Judge: ReproduceName, Reason: reason, Unjudged: map[string]string{
+			"stable_facts": reason,
 		}}
 	}
 

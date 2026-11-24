@@ -227,7 +227,11 @@ func reproductionRecord(t *testing.T, root, id, scenarioHash, inputHash string, 
 	if err != nil {
 		t.Fatal(err)
 	}
-	stable := []string{"evidence.sha256", "target.version"}
+	// A record with no readings is one that declared nothing stable.
+	var stable []string
+	if len(facts) > 0 {
+		stable = []string{"evidence.sha256", "target.version"}
+	}
 	if _, err := w.Emit(record.KindRunStarted, 0, record.RunStarted{
 		RunID: id, Scenario: record.ScenarioRef{Name: "security", Hash: scenarioHash},
 		Reproduce: &record.ReproduceRef{Facts: stable},
@@ -260,4 +264,22 @@ func reproductionRecord(t *testing.T, root, id, scenarioHash, inputHash string, 
 		t.Fatal(err)
 	}
 	return rec
+}
+
+// Records that declare no stable facts give reproduce nothing to compare, and
+// it says that, not that a step went unmeasured.
+func TestRecordsWithNoStableFactsSayWhyThereIsNothingToJudge(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	one := reproductionRecord(t, root, "first-20260902T120000Z", "sha256:scenario", "sha256:input", map[string]string{})
+	two := reproductionRecord(t, root, "second-20260902T120001Z", "sha256:scenario", "sha256:input", map[string]string{})
+
+	_, err := judge.ApplyReproduce([]*record.Record{one, two})
+	if err == nil {
+		t.Fatal("judged records that declare no stable facts")
+	}
+	if got, want := err.Error(), "reproduce has nothing to judge: the records declare no stable facts"; got != want {
+		t.Errorf("error = %q, want %q", got, want)
+	}
 }

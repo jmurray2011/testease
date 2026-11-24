@@ -7,11 +7,13 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jmurray2011/testease/internal/target/fakeexec"
 )
 
-func fakeExecStreamsThenSleeps(c fakeCall) int {
-	if c.arg(1) == "exec" {
-		_, _ = fmt.Fprint(c.stdout, "first")
+func fakeExecStreamsThenSleeps(c fakeexec.Call) int {
+	if c.Arg(1) == "exec" {
+		_, _ = fmt.Fprint(c.Stdout, "first")
 		time.Sleep(10 * time.Second)
 	}
 	return 0
@@ -45,10 +47,10 @@ func TestFetchReturnsAStreamBeforeTheRemoteCommandCompletes(t *testing.T) {
 	_ = reader.Close()
 }
 
-func fakeExecFailsLate(c fakeCall) int {
-	if c.arg(1) == "exec" {
-		_, _ = fmt.Fprint(c.stdout, "partial")
-		_, _ = fmt.Fprintln(c.stderr, "remote-broke")
+func fakeExecFailsLate(c fakeexec.Call) int {
+	if c.Arg(1) == "exec" {
+		_, _ = fmt.Fprint(c.Stdout, "partial")
+		_, _ = fmt.Fprintln(c.Stderr, "remote-broke")
 		return 42
 	}
 	return 0

@@ -129,8 +129,13 @@ type targetsView struct {
 	account                  *fyne.Container
 }
 
-// prefCloudRunner is the runner a cloud look was last made for.
-const prefCloudRunner = "cloud-runner"
+// The runner and account a cloud look was last made for.
+const (
+	prefCloudRunner  = "cloud-runner"
+	prefCloudProfile = "cloud-profile"
+	prefCloudRegion  = "cloud-region"
+	prefCloudCluster = "cloud-cluster"
+)
 
 // Where the Targets screen looks.
 const (
@@ -160,9 +165,11 @@ func newTargetsView(runsDir string, call cliCall, openRun func(string)) *targets
 	}
 	v.runner.SetPlaceHolder("runner, user@host")
 	// The account is connection setup, like a path: the same variables the
-	// CLI reads fill it in.
-	v.profile.SetText(os.Getenv("TESTEASE_AWS_PROFILE"))
-	v.region.SetText(os.Getenv("TESTEASE_AWS_REGION"))
+	// CLI reads fill it in, then the account last looked in.
+	prefs := fyne.CurrentApp().Preferences()
+	v.profile.SetText(firstSet(os.Getenv("TESTEASE_AWS_PROFILE"), prefs.String(prefCloudProfile)))
+	v.region.SetText(firstSet(os.Getenv("TESTEASE_AWS_REGION"), prefs.String(prefCloudRegion)))
+	v.cluster.SetText(prefs.String(prefCloudCluster))
 	v.profile.SetPlaceHolder("AWS profile")
 	v.region.SetPlaceHolder("region")
 	v.cluster.SetPlaceHolder("ECS cluster")
@@ -261,15 +268,20 @@ func (v *targetsView) reapArgs(force bool) []string {
 	case placeDockerAll:
 		args = append(args, "--all-contexts")
 	case placeEC2, placeECS:
+		prefs := fyne.CurrentApp().Preferences()
 		platform := map[int]string{placeEC2: "ec2", placeECS: "ecs"}[v.place]
-		args = append(args, "--platform", platform,
-			"--aws-profile", strings.TrimSpace(v.profile.Text), "--aws-region", strings.TrimSpace(v.region.Text))
+		profile, region := strings.TrimSpace(v.profile.Text), strings.TrimSpace(v.region.Text)
+		args = append(args, "--platform", platform, "--aws-profile", profile, "--aws-region", region)
+		prefs.SetString(prefCloudProfile, profile)
+		prefs.SetString(prefCloudRegion, region)
 		if r := strings.TrimSpace(v.runner.Text); r != "" {
 			args = append(args, "--runner", r)
-			fyne.CurrentApp().Preferences().SetString(prefCloudRunner, r)
+			prefs.SetString(prefCloudRunner, r)
 		}
 		if v.place == placeECS {
-			args = append(args, "--ecs-cluster", strings.TrimSpace(v.cluster.Text))
+			cluster := strings.TrimSpace(v.cluster.Text)
+			args = append(args, "--ecs-cluster", cluster)
+			prefs.SetString(prefCloudCluster, cluster)
 		}
 	}
 	args = append(args, "--output", "json")
@@ -542,4 +554,14 @@ func fateWords(fate string) (string, pillKind, bool) {
 func (v *targetsView) cellText(row, col int) string {
 	text, _, _ := v.cell(row, col)
 	return text
+}
+
+// firstSet is the first of values that is not blank.
+func firstSet(values ...string) string {
+	for _, v := range values {
+		if strings.TrimSpace(v) != "" {
+			return v
+		}
+	}
+	return ""
 }

@@ -5,6 +5,17 @@ Run scenarios against machines and save what happened.
 Test results and the conclusion drawn from them are separate. You can inspect
 or rejudge a saved run without running it again.
 
+## Download
+
+Each [release](https://github.com/jmurray2011/testease/releases) has an
+archive for Linux (`linux-amd64.tar.gz`) and Windows (`windows-amd64.zip`),
+and a `SHA256SUMS` to check them against. Each archive holds `testease` and
+the desktop app, `testease-desktop`, side by side: the app starts runs with
+the `testease` beside it. Unpack it anywhere and put the folder on `PATH`.
+The Linux app needs the system's OpenGL and X11 or Wayland libraries, which a
+desktop install already has. The Windows build is not signed, so SmartScreen
+asks before it first runs.
+
 ## Two minutes, from a clone
 
 You need a Docker daemon and Go. Nothing else.
@@ -113,8 +124,12 @@ may be downloaded automatically by Go. `make build` produces the static trimmed
 binary. To install it as `testease`, set `GOBIN` to a directory already on your
 PATH before running `make install`.
 
-The desktop app, `testease-desktop`, browses the runs directory: the records,
-their steps and output, and the verdicts judges wrote. It is a separate Go
+The desktop app, `testease-desktop`, browses the runs directory - records,
+their steps and output, batches, campaigns and the verdicts judges wrote - and
+starts the work the CLI does: doctor, run, judge, batch and campaign runs,
+render, compare and package, and listing and removing standing targets in
+docker, EC2 and ECS. It does all of it by calling `testease`, so a record made
+from the app is the same as one made from a shell. It is a separate Go
 module under `cmd/testease-desktop` because it needs cgo, a C compiler and the
 GL headers (on Debian or Ubuntu, `libgl1-mesa-dev xorg-dev libwayland-dev
 libxkbcommon-dev`; on Windows, MinGW-w64 gcc). `make desktop-validate` is its

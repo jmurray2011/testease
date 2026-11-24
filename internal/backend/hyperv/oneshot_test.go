@@ -1,7 +1,6 @@
 package hyperv
 
 import (
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -161,50 +160,6 @@ func TestMediaIsStagedBesideTheProbe(t *testing.T) {
 	if !found {
 		t.Errorf("media did not reach the staging list: %+v", stage)
 	}
-}
-
-// fakeDocker writes a docker stand-in that answers create/cp/start/rm/stop the
-// way the daemon would, so Run's whole choreography can be exercised without
-// one. `cp <cell>:/wanted.txt <local>` hands back a fixed body; /missing.txt
-// is refused the way a file that is not there is.
-func fakeDocker(t *testing.T, startExit int) string {
-	t.Helper()
-	// A container that ran and reported that code, which is the ordinary case.
-	return fakeDockerIn(t, startExit, "exited", startExit)
-}
-
-// fakeDockerIn is a docker whose `start -a` exits with one code and whose
-// container is left in a given state. The two are separate because they are
-// separate on a real daemon: `docker start -a` exits with the CONTAINER's
-// status when the container ran, and with its own when the container never
-// started, and only the state says which happened.
-func fakeDockerIn(t *testing.T, startExit int, state string, containerExit int) string {
-	t.Helper()
-
-	path := filepath.Join(t.TempDir(), "docker")
-	body := `#!/bin/bash
-cmd="$1"; shift
-case "$cmd" in
-  rm|stop|create) exit 0;;
-  inspect)
-    printf '` + state + ` ` + fmt.Sprint(containerExit) + `'
-    exit 0;;
-  cp)
-    src="$1"; dst="$2"
-    case "$src" in
-      *:/wanted.txt) printf 'kept bytes' > "$dst"; exit 0;;
-      *:*/testease-facts) exit 1;;
-      *:*) echo "no such file" >&2; exit 1;;
-      *) exit 0;;
-    esac;;
-  start) exit ` + fmt.Sprint(startExit) + `;;
-  *) exit 0;;
-esac
-`
-	if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
-		t.Fatalf("write fake docker: %v", err)
-	}
-	return path
 }
 
 func TestDeclaredFetchesTravelWithTheCommand(t *testing.T) {

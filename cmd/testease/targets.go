@@ -10,6 +10,7 @@ import (
 
 	backend "github.com/jmurray2011/testease/internal/backend/docker"
 	"github.com/jmurray2011/testease/internal/reap"
+	"github.com/jmurray2011/testease/internal/runnerid"
 )
 
 func targetsCmd() *cobra.Command {
@@ -68,7 +69,7 @@ func doTargets(cmd *cobra.Command, _ []string) error {
 	}
 
 	host, _ := os.Hostname()
-	self := reap.Runner{User: os.Getenv("USER"), Host: host, AllUsers: true}
+	self := reap.Runner{User: runnerid.User(), Host: host, AllUsers: true}
 	wanted := flagString(cmd, "run")
 
 	standing := []standingTarget{}

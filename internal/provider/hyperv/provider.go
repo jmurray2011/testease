@@ -29,6 +29,11 @@ type Options struct {
 	RunID  string
 	Runner string
 
+	// User is the account Runner names, written into scratch ownership so reap
+	// can tell whose scratch it is. Passed in rather than looked up: a provider
+	// knows the target contract and nothing about who is running it.
+	User string
+
 	// ScratchRoot is the run-owned runtime directory inspected by `testease
 	// reap`. Carried bytes live in a private child so a killed runner leaves
 	// attributable, recoverable scratch rather than anonymous /tmp files.
@@ -201,7 +206,7 @@ func (c *cell) prepareCarryScratch() error {
 		User  string `json:"user"`
 		Host  string `json:"host"`
 		PID   int    `json:"pid"`
-	}{c.provider.opt.RunID, c.spec.Cell, os.Getenv("USER"), host, os.Getpid()})
+	}{c.provider.opt.RunID, c.spec.Cell, c.provider.opt.User, host, os.Getpid()})
 	if err != nil {
 		return fmt.Errorf("describe carry scratch owner: %w", err)
 	}

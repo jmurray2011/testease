@@ -25,6 +25,7 @@ import (
 
 	"github.com/jmurray2011/testease/internal/inputbundle"
 	"github.com/jmurray2011/testease/internal/record"
+	"github.com/jmurray2011/testease/internal/runnerid"
 	"github.com/jmurray2011/testease/internal/scenario"
 	"github.com/jmurray2011/testease/internal/target"
 )
@@ -363,7 +364,7 @@ func (r *run) prepareSecretFiles() error {
 
 	host, _ := os.Hostname()
 	owner, err := json.Marshal(runtimeOwner{
-		RunID: r.runID, Cell: r.cell, User: os.Getenv("USER"), Host: host, PID: os.Getpid(),
+		RunID: r.runID, Cell: r.cell, User: runnerid.User(), Host: host, PID: os.Getpid(),
 	})
 	if err != nil {
 		return &PreconditionError{Message: "describe secret workspace owner: " + err.Error()}
@@ -1400,7 +1401,7 @@ func firstProbe(plan *scenario.Plan, host string) string {
 
 func hostRef() record.HostRef {
 	name, _ := os.Hostname()
-	return record.HostRef{User: os.Getenv("USER"), Hostname: name, PID: os.Getpid()}
+	return record.HostRef{User: runnerid.User(), Hostname: name, PID: os.Getpid()}
 }
 
 func media(specs []string) []target.Media {

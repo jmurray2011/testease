@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"sort"
@@ -55,7 +56,9 @@ func doTargets(cmd *cobra.Command, _ []string) error {
 	var found []reap.Target
 	for _, dockerContext := range contexts {
 		client := backend.Client{Context: dockerContext, Log: log}
-		labelled, err := client.Labelled(cmd.Context(), reap.LabelRunner)
+		labelled, err := askContext(cmd.Context(), func(ctx context.Context) (map[string]map[string]string, error) {
+			return client.Labelled(ctx, reap.LabelRunner)
+		})
 		if err != nil {
 			// A daemon that did not answer is not an empty daemon.
 			notices = append(notices, fmt.Sprintf("skipped %s: %v", describeContext(dockerContext), err))

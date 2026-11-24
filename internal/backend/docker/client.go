@@ -89,8 +89,19 @@ func (c Client) command(ctx context.Context, args ...string) *exec.Cmd {
 
 	// Redacted: an env value in a log line is an env value in CI output.
 	c.log().Debug("docker", "args", redact(full))
-	return exec.CommandContext(ctx, c.bin(), full...)
+	cmd := exec.CommandContext(ctx, c.bin(), full...)
+	// docker reaches an ssh context through a child ssh, which can outlive a
+	// killed docker while it waits for a password nobody will type, holding
+	// docker's output open. Without a bound, giving up on the daemon would
+	// wait for that child forever.
+	cmd.WaitDelay = outputGrace
+	cmd.Cancel = func() error { return stopTree(cmd) }
+	return cmd
 }
+
+// outputGrace is how long a finished or killed docker's output may stay open
+// before it is closed regardless.
+const outputGrace = 5 * time.Second
 
 // Output runs a docker command and returns its stdout, with stderr folded into
 // the error so a failure says what docker said about it.
@@ -662,6 +673,20 @@ func (c Client) Contexts(ctx context.Context) ([]string, error) {
 		return nil, err
 	}
 	return nonEmptyLines(out), nil
+}
+
+// DaemonID is the daemon's own ID: two contexts that reach one daemon get the
+// same one.
+func (c Client) DaemonID(ctx context.Context) (string, error) {
+	out, err := c.Output(ctx, "info", "--format", "{{.ID}}")
+	if err != nil {
+		return "", err
+	}
+	id := strings.TrimSpace(out)
+	if id == "" {
+		return "", errors.New("the daemon gave no ID")
+	}
+	return id, nil
 }
 
 // Labelled lists every container this daemon holds that carries a label,

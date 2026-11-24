@@ -45,10 +45,11 @@ func TestCloudSmokeScenariosResolveWithoutAccountSettings(t *testing.T) {
 				t.Errorf("scenario must judge the probe and require its returned artifact: judge=%+v artifacts=%+v", plan.Judge, plan.Artifacts)
 			}
 			for _, step := range plan.Steps {
-				info, err := os.Stat(filepath.Join(plan.Dir, step.Probe))
+				probe := filepath.Join(plan.Dir, step.Probe)
+				info, err := os.Stat(probe)
 				if err != nil {
 					t.Errorf("probe %s: %v", step.Probe, err)
-				} else if info.Mode()&0o111 == 0 {
+				} else if !shippedExecutable(t, probe, info) {
 					t.Errorf("probe %s is not executable", step.Probe)
 				}
 			}

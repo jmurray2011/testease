@@ -53,7 +53,7 @@ func TestTheExampleScenarioStillLoads(t *testing.T) {
 				t.Errorf("%s: step %q names %s, which is not there: %v", name, step.Label, step.Probe, err)
 				continue
 			}
-			if info.Mode()&0o111 == 0 {
+			if !shippedExecutable(t, probe, info) {
 				t.Errorf("%s: %s is not executable", name, step.Probe)
 			}
 		}

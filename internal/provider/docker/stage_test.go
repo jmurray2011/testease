@@ -2,30 +2,18 @@ package docker
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	backend "github.com/jmurray2011/testease/internal/backend/docker"
 	"github.com/jmurray2011/testease/internal/target"
+	"github.com/jmurray2011/testease/internal/target/fakeexec"
 )
 
 func TestStageRefusesDifferentBytesAtAContentAddressedMount(t *testing.T) {
 	t.Parallel()
 
-	bin := filepath.Join(t.TempDir(), "docker")
-	body := `#!/bin/bash
-case "$3" in
-test) exit 0;;
-sha256sum) echo "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa  /input"; exit 0;;
-inspect) echo true; exit 0;;
-*) exit 1;;
-esac
-`
-	if err := os.WriteFile(bin, []byte(body), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	bin := fakeexec.Program(t, "docker", "stage-mismatch", nil)
 	c := &container{
 		name: "box",
 		session: &backend.Session{
@@ -47,18 +35,7 @@ esac
 func TestStageExplainsAnUnreadableContentAddressedMount(t *testing.T) {
 	t.Parallel()
 
-	bin := filepath.Join(t.TempDir(), "docker")
-	body := `#!/bin/bash
-case "$1:$3" in
-exec:test) exit 0;;
-exec:sha256sum) echo "sha256sum: /input: Is a directory" >&2; exit 1;;
-inspect:*) echo true; exit 0;;
-*) exit 1;;
-esac
-`
-	if err := os.WriteFile(bin, []byte(body), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	bin := fakeexec.Program(t, "docker", "stage-unreadable", nil)
 	c := &container{
 		name: "box",
 		session: &backend.Session{

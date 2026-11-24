@@ -29,6 +29,7 @@ import (
 	ssmbackend "github.com/jmurray2011/testease/internal/backend/ssm"
 	winrmbackend "github.com/jmurray2011/testease/internal/backend/winrm"
 	"github.com/jmurray2011/testease/internal/provider/fingerprint"
+	"github.com/jmurray2011/testease/internal/backend/filemode"
 	"github.com/jmurray2011/testease/internal/target"
 )
 
@@ -357,7 +358,7 @@ func (m *machine) Stage(ctx context.Context, items []target.Media) error {
 			return fmt.Errorf("open media %s: %w", item.Source, err)
 		}
 		mode := fs.FileMode(0o600)
-		executable := info.Mode().Perm()&0o111 != 0
+		executable := filemode.Executable(item.Source, info)
 		if executable {
 			mode = 0o700
 		}

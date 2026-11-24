@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jmurray2011/testease/internal/backend/filemode"
 	"github.com/jmurray2011/testease/internal/target"
 )
 
@@ -228,7 +229,7 @@ func (t *createdTarget) Stage(ctx context.Context, items []target.Media) error {
 			return err
 		}
 		mode := fs.FileMode(0o600)
-		if info.Mode().Perm()&0o111 != 0 {
+		if filemode.Executable(item.Source, info) {
 			mode = 0o700
 		}
 		if item.ReadOnly {

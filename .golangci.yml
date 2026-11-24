@@ -141,6 +141,17 @@ linters:
             - pkg: github.com/jmurray2011/testease/internal
               desc: a provider resolves targets and knows nothing else
 
+        environment-imports-nothing-internal:
+          list-mode: lax
+          files:
+            - "**/internal/environment/**"
+          allow:
+            - $gostd
+            - github.com/jmurray2011/testease/internal/environment
+          deny:
+            - pkg: github.com/jmurray2011/testease/internal
+              desc: internal/environment is a table and knows nothing else
+
         reap-imports-nothing-internal:
           list-mode: lax
           files:

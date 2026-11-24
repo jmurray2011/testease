@@ -10,7 +10,6 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 )
@@ -108,9 +107,9 @@ func newCompareView(dirs []string, backLabel string, back func()) (*compareView,
 	top := backHeader(backLabel, back, title, v.reproduce.Button, v.onlyDiff)
 	foot := note("Runs are oldest first. A highlighted value differs from the first run's. Tap a row to read its values in full. Secrets are compared but not shown.")
 	v.content = container.NewBorder(
-		container.NewVBox(container.NewPadded(container.NewVBox(top, summary)), widget.NewSeparator()),
+		container.NewVBox(container.NewPadded(container.NewVBox(top, summary)), widget.NewSeparator(), v.empty),
 		container.NewVBox(widget.NewSeparator(), foot),
-		nil, nil, container.NewStack(v.table, container.NewVBox(layout.NewSpacer(), container.NewCenter(v.empty), layout.NewSpacer())),
+		nil, nil, v.table,
 	)
 	v.onlyDiff.SetChecked(true)
 	return v, nil

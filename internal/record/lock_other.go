@@ -1,4 +1,4 @@
-//go:build !unix
+//go:build !unix && !windows
 
 package record
 
@@ -13,3 +13,5 @@ import (
 func lockExclusive(*os.File) error {
 	return errors.New("record locking is not implemented on this platform")
 }
+
+func lockContended(error) bool { return false }

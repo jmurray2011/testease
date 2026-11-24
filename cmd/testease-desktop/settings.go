@@ -1,5 +1,10 @@
 package main
 
+import (
+	"path/filepath"
+	"strings"
+)
+
 // prefRunsDir is the one thing this app remembers. A path changes where
 // records are and never what is measured, so it is safe to keep; the values
 // that change a measurement are never remembered anywhere.
@@ -21,4 +26,22 @@ func resolveRunsDir(flag, env, remembered string) (dir, from string) {
 	default:
 		return "", ""
 	}
+}
+
+// shortPath is a path as the narrow sidebar shows it: its last two elements,
+// whole, after an ellipsis, rather than the whole path wrapped mid-word.
+func shortPath(p string) string {
+	clean := filepath.Clean(p)
+	sep := string(filepath.Separator)
+	parts := strings.Split(strings.TrimPrefix(clean, filepath.VolumeName(clean)), sep)
+	var kept []string
+	for _, part := range parts {
+		if part != "" {
+			kept = append(kept, part)
+		}
+	}
+	if len(kept) <= 2 {
+		return p
+	}
+	return "…" + sep + filepath.Join(kept[len(kept)-2:]...)
 }

@@ -29,7 +29,7 @@ const (
 
 var (
 	columnTitles = [columns]string{"Run", "Scenario", "Measured", "Status", "Latest verdict", "Target fate"}
-	columnWidths = [columns]float32{370, 130, 85, 105, 250, 200}
+	columnWidths = [columns]float32{260, 120, 85, 105, 250, 200}
 )
 
 // runsView lists the records under a runs directory, newest first.
@@ -42,6 +42,9 @@ type runsView struct {
 	// status is read once per reload: for a record that has not closed it
 	// asks the lock, which is not something to do on every repaint.
 	status map[string]string
+	// widths are the columns' current widths. Run and Scenario grow to fit
+	// what is in them, up to a cap, so a run id is not cut off.
+	widths [columns]float32
 
 	filter  *widget.Entry
 	count   *widget.Label
@@ -103,9 +106,7 @@ func newRunsView(dir string, onOpen func(dir string)) *runsView {
 			o.(*widget.Label).SetText(columnTitles[id.Col])
 		}
 	}
-	for i, w := range columnWidths {
-		v.table.SetColumnWidth(i, w)
-	}
+	v.widths = columnWidths
 	v.table.OnSelected = func(id widget.TableCellID) {
 		v.table.UnselectAll()
 		if id.Row >= 0 && id.Row < len(v.shown) {
@@ -163,7 +164,31 @@ func (v *runsView) reload() {
 		}
 		return v.all[i].RunID < v.all[j].RunID
 	})
+	v.fit()
 	v.apply()
+}
+
+// fitCap is as wide as a fitted column gets; past it, the text is cut with an
+// ellipsis like any other.
+const fitCap = 560
+
+// fit widens Run and Scenario to their longest text.
+func (v *runsView) fit() {
+	pad := 2*theme.InnerPadding() + theme.Padding()
+	widest := func(col int, style fyne.TextStyle, text func(browse.Run) string) float32 {
+		w := columnWidths[col]
+		for _, r := range v.all {
+			if m := fyne.MeasureText(text(r), theme.TextSize(), style).Width + pad; m > w {
+				w = m
+			}
+		}
+		return min(w, fitCap)
+	}
+	v.widths[colRun] = widest(colRun, fyne.TextStyle{Monospace: true}, func(r browse.Run) string { return r.RunID })
+	v.widths[colScenario] = widest(colScenario, fyne.TextStyle{}, func(r browse.Run) string { return r.Scenario })
+	for i, w := range v.widths {
+		v.table.SetColumnWidth(i, w)
+	}
 }
 
 func (v *runsView) showMessage(text string) {

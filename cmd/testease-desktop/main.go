@@ -74,7 +74,7 @@ func newShell(w fyne.Window, dir, from string, remember func(string)) *shell {
 	caption := widget.NewLabel("Runs directory")
 	caption.Importance = widget.LowImportance
 	s.where = widget.NewLabelWithStyle("", fyne.TextAlignLeading, fyne.TextStyle{Monospace: true})
-	s.where.Wrapping = fyne.TextWrapBreak
+	s.where.Truncation = fyne.TextTruncateEllipsis
 	change := widget.NewButtonWithIcon("Choose…", theme.FolderOpenIcon(), s.chooseDir)
 
 	nav := container.NewBorder(
@@ -126,7 +126,7 @@ func (s *shell) setDir(dir, from string) {
 	if dir == "" {
 		s.where.SetText("not chosen")
 	} else {
-		s.where.SetText(dir + "\n(" + from + ")")
+		s.where.SetText(shortPath(dir) + "\n(" + from + ")")
 	}
 	s.runs = newRunsView(dir, s.openRecord)
 	s.showRuns()

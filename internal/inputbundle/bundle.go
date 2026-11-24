@@ -20,6 +20,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/jmurray2011/testease/internal/backend/private"
 	"github.com/jmurray2011/testease/internal/scenario"
 )
 
@@ -148,7 +149,7 @@ func stage(base, runsDir, name, kind string, entry Entry, descriptorHash string)
 	}
 
 	dir := filepath.Join(runsDir, cacheDir)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if err := private.MkdirAll(dir); err != nil {
 		return Resolved{}, fmt.Errorf("make input cache: %w", err)
 	}
 	destination := filepath.Join(dir, strings.TrimPrefix(expected, "sha256:"))

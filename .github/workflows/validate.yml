@@ -18,3 +18,20 @@ jobs:
           cache: true
       - run: make validate
       - run: make build
+
+  # Windows is a supported runner platform. Vet compiles every package and
+  # every test for it; the tests listed are the ones whose behaviour has been
+  # ported. A package joins the list when it passes here, never by skipping.
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go vet ./...
+      - run: go test ./internal/record/... ./internal/reap/... ./internal/doctor/... ./internal/runnerid/... ./internal/backend/docker/...
+      - run: go build -trimpath -o testease.exe ./cmd/testease
+        env:
+          CGO_ENABLED: "0"

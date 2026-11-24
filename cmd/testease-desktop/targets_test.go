@@ -326,3 +326,46 @@ func TestECSAsksForItsCluster(t *testing.T) {
 		t.Errorf("asked %q", last)
 	}
 }
+
+// A look that failed is not a look that found nothing.
+func TestALookThatFailedDoesNotClaimNothingIsStanding(t *testing.T) {
+	test.NewTempApp(t)
+
+	cli := &fakeCLI{answers: map[string]string{
+		"targets":        standingJSON,
+		"--platform ec2": `{"targets": [], "removable": 0, "removed": [], "notices": ["could not list ec2 targets: Token has expired"]}`,
+	}}
+	v := ec2Targets(t, cli)
+	if strings.Contains(v.message.Text, "No targets standing") {
+		t.Errorf("message = %q claims nothing is standing", v.message.Text)
+	}
+	if !strings.Contains(v.message.Text, "Token has expired") {
+		t.Errorf("message = %q, want why the look failed", v.message.Text)
+	}
+}
+
+// Changing where to look while a slow look is still out drops its answer:
+// docker's targets must not show up under EC2.
+func TestAnAnswerFromWhereYouNoLongerLookIsDropped(t *testing.T) {
+	test.NewTempApp(t)
+
+	cli := &fakeCLI{answers: map[string]string{"targets": standingJSON, "--platform ec2": ec2PreviewJSON}}
+	v := newTargetsView("/srv/runs", cli.call, func(string) {})
+	var pending []func()
+	v.async = func(f func()) { pending = append(pending, f) }
+	v.onUI = func(f func()) { f() }
+	v.profile.SetText("lab")
+	v.region.SetText("us-east-2")
+
+	v.reload()
+	v.choose(placeEC2)
+	if len(v.all) != 0 {
+		t.Fatalf("still showing %d rows from the last place", len(v.all))
+	}
+	for _, f := range pending {
+		f()
+	}
+	if len(v.all) != 2 || v.all[0].Name != "i-0abc" {
+		t.Errorf("showing %+v, want only EC2's answer", v.all)
+	}
+}

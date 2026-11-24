@@ -114,6 +114,7 @@ type targetsView struct {
 	table    *widget.Table
 	content  fyne.CanvasObject
 	busy     bool
+	looks    int
 	notices  []string
 	lastNote string
 
@@ -189,7 +190,8 @@ func newTargetsView(runsDir string, call cliCall, openRun func(string)) *targets
 	v.remove = widget.NewButtonWithIcon("Remove kept targets…", theme.DeleteIcon(), v.removeKept)
 	picked := container.NewBorder(nil, nil, nil, container.NewHBox(v.copy, v.openRec), v.shell)
 	v.content = container.NewBorder(
-		container.NewVBox(screenTitle("Targets", v.count, v.places, v.remove, refresh),
+		container.NewVBox(screenTitle("Targets", v.count,
+			container.NewGridWrap(fyne.NewSize(230, v.places.MinSize().Height), v.places), v.remove, refresh),
 			container.NewPadded(v.account), widget.NewSeparator(), v.message),
 		container.NewVBox(widget.NewSeparator(), container.NewPadded(picked),
 			note("A run that did not finish cleanly keeps its targets, because a half-changed box answers questions the record does not. Remove kept targets runs testease reap, which removes only targets whose run is gone, along with the networks and secret workspaces those runs left, and asks first.")),
@@ -282,9 +284,12 @@ func fromReap(r reaped) []standing {
 // reload asks testease what is standing. Docker can be slow to answer, so the
 // asking happens off the app's goroutine.
 func (v *targetsView) reload() {
-	if v.busy {
-		return
-	}
+	// Each look supersedes the last: an answer from a place no longer
+	// chosen, or one overtaken by a newer look, is dropped.
+	v.looks++
+	look := v.looks
+	v.all = nil
+	v.table.Refresh()
 	v.clearPick()
 	if need := v.missing(); need != "" {
 		v.all, v.notices = nil, nil
@@ -293,7 +298,6 @@ func (v *targetsView) reload() {
 		v.table.Refresh()
 		return
 	}
-	v.busy = true
 	showMessage(v.message, "Asking testease what is standing…")
 	args, cloud := v.listArgs(), v.cloud()
 	v.async(func() {
@@ -311,7 +315,9 @@ func (v *targetsView) reload() {
 			err = json.Unmarshal(out, &got)
 		}
 		v.onUI(func() {
-			v.busy = false
+			if look != v.looks {
+				return
+			}
 			if err != nil {
 				v.all = nil
 				showMessage(v.message, "Could not list targets: "+err.Error())
@@ -334,8 +340,13 @@ func (v *targetsView) showNotes() {
 	if v.lastNote != "" {
 		lines = append(lines, v.lastNote)
 	}
-	if len(v.all) == 0 {
+	switch {
+	case len(v.all) == 0 && len(v.notices) == 0:
 		lines = append(lines, "No targets standing.")
+	case len(v.all) == 0:
+		// Something could not be looked at, so nothing found is not
+		// nothing standing.
+		lines = append(lines, "Nothing found where testease could look:")
 	}
 	lines = append(lines, v.notices...)
 	if len(lines) == 0 {

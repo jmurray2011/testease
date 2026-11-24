@@ -40,31 +40,27 @@ type detailView struct {
 
 	meta, verdicts, targets, notes []string
 	content                        fyne.CanvasObject
+
+	// backLabel names the screen back goes to: the record was opened from
+	// the Runs listing, a batch or a campaign.
+	backLabel string
+	back      func()
 }
 
 func newDetailView(dir string, back func()) (*detailView, error) {
+	return newDetailViewFrom(dir, "Runs", back)
+}
+
+func newDetailViewFrom(dir, backLabel string, back func()) (*detailView, error) {
 	d, err := browse.Open(dir)
 	if err != nil {
 		return nil, err
 	}
-	v := &detailView{d: d, selected: -1}
+	v := &detailView{d: d, selected: -1, backLabel: backLabel, back: back}
 
 	// Header: where this is, what it measured, and how to get at the files.
-	backButton := widget.NewButtonWithIcon("Runs", theme.NavigateBackIcon(), back)
-	backButton.Importance = widget.LowImportance
-	id := widget.NewLabelWithStyle(d.RunID, fyne.TextAlignLeading, fyne.TextStyle{Monospace: true})
-	id.Selectable = true
 	status := newPill(statusOf(d.Run), statusKind(statusOf(d.Run)))
-	openFolder := widget.NewButtonWithIcon("Open folder", theme.FolderOpenIcon(), func() {
-		if u, err := url.Parse(storage.NewFileURI(d.Dir).String()); err == nil {
-			_ = fyne.CurrentApp().OpenURL(u)
-		}
-	})
-	id.Truncation = fyne.TextTruncateEllipsis
-	top := container.NewBorder(nil, nil,
-		container.NewHBox(backButton, widget.NewLabel("/")),
-		container.NewHBox(container.NewCenter(status), openFolder),
-		id)
+	top := backHeader(backLabel, back, d.RunID, container.NewCenter(status), openFolderButton(d.Dir))
 
 	v.meta = metaParts(d)
 	metaLabel := widget.NewLabel(strings.Join(v.meta, "    "))
@@ -143,6 +139,15 @@ func newDetailView(dir string, back func()) (*detailView, error) {
 
 // firstOfInterest is the step a person opening a record wants first: the first
 // one that did not measure cleanly, or the first step when all of them did.
+// openFolderButton opens a folder in the OS's file manager.
+func openFolderButton(dir string) *widget.Button {
+	return widget.NewButtonWithIcon("Open folder", theme.FolderOpenIcon(), func() {
+		if u, err := url.Parse(storage.NewFileURI(dir).String()); err == nil {
+			_ = fyne.CurrentApp().OpenURL(u)
+		}
+	})
+}
+
 func firstOfInterest(steps []browse.Step) int {
 	for i, s := range steps {
 		if s.Status != string(record.StatusMeasured) {

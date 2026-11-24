@@ -19,6 +19,8 @@ import (
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
+
+	"github.com/jmurray2011/testease/internal/browse"
 )
 
 // appID names the app to the OS: where it keeps its one preference, and how
@@ -57,15 +59,34 @@ func main() {
 	w.ShowAndRun()
 }
 
+// navSection is one of the sidebar's sections.
+type navSection int
+
+const (
+	sectionRuns navSection = iota
+	sectionBatches
+	sectionCampaigns
+	sectionSettings
+	sections
+)
+
+var sectionNames = [sections]string{"Runs", "Batches", "Campaigns", "Settings"}
+
 // shell is the window: sections on the left, the current screen on the right.
 type shell struct {
 	window   fyne.Window
 	remember func(dir string)
 
 	dir, from string
+	section   navSection
 	runs      *runsView
-	onRuns    bool
+	batches   *batchesView
+	campaigns *campaignsView
+	// current is the screen showing now, so the refresh knows what to
+	// re-read and back knows where it is.
+	current any
 
+	buttons [sections]*widget.Button
 	where   *widget.Label
 	body    *fyne.Container
 	content fyne.CanvasObject
@@ -75,9 +96,14 @@ func newShell(w fyne.Window, dir, from string, remember func(string)) *shell {
 	s := &shell{window: w, remember: remember, dir: dir, from: from}
 
 	name := widget.NewLabelWithStyle("testease", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-	runsButton := widget.NewButton("Runs", s.showRuns)
-	runsButton.Alignment = widget.ButtonAlignLeading
-	runsButton.Importance = widget.HighImportance
+	nav := container.NewVBox(name)
+	shows := [sections]func(){s.showRuns, s.showBatches, s.showCampaigns, s.showSettings}
+	for i := range sections {
+		b := widget.NewButton(sectionNames[i], shows[i])
+		b.Alignment = widget.ButtonAlignLeading
+		s.buttons[i] = b
+		nav.Add(b)
+	}
 
 	caption := widget.NewLabel("Runs directory")
 	caption.Importance = widget.LowImportance
@@ -85,13 +111,13 @@ func newShell(w fyne.Window, dir, from string, remember func(string)) *shell {
 	s.where.Truncation = fyne.TextTruncateEllipsis
 	change := widget.NewButtonWithIcon("Choose…", theme.FolderOpenIcon(), s.chooseDir)
 
-	nav := container.NewBorder(
-		container.NewVBox(name, runsButton),
+	navBox := container.NewBorder(
+		nav,
 		container.NewVBox(widget.NewSeparator(), caption, s.where, change),
 		nil, nil,
 	)
 	navBackground := canvas.NewRectangle(theme.Color(colorNav))
-	navPanel := container.NewStack(navBackground, container.NewPadded(nav))
+	navPanel := container.NewStack(navBackground, container.NewPadded(navBox))
 	fyne.CurrentApp().Settings().AddListener(func(fyne.Settings) {
 		navBackground.FillColor = theme.Color(colorNav)
 		navBackground.Refresh()
@@ -137,40 +163,101 @@ func (s *shell) setDir(dir, from string) {
 		name, in := sidebarPath(dir)
 		s.where.SetText(strings.TrimSpace(name + "\n" + in + "\n(" + from + ")"))
 	}
-	s.runs = newRunsView(dir, s.openRecord)
+	s.runs = newRunsView(dir, func(rec string) { s.openRecord(rec, "Runs", s.showRuns) })
+	s.batches = newBatchesView(dir, s.openBatch)
+	s.campaigns = newCampaignsView(dir, func(c browse.Campaign) { s.openCampaign(c.ID) })
 	s.showRuns()
 }
 
-func (s *shell) showRuns() {
-	s.onRuns = true
-	s.runs.reload()
-	s.show(s.runs.content)
+// highlight marks the section a screen belongs to.
+func (s *shell) highlight(sec navSection) {
+	s.section = sec
+	for i, b := range s.buttons {
+		if navSection(i) == sec {
+			b.Importance = widget.HighImportance
+		} else {
+			b.Importance = widget.LowImportance
+		}
+		b.Refresh()
+	}
 }
 
-func (s *shell) openRecord(dir string) {
-	v, err := newDetailView(dir, s.showRuns)
+func (s *shell) showRuns() {
+	s.highlight(sectionRuns)
+	s.runs.reload()
+	s.show(s.runs, s.runs.content)
+}
+
+func (s *shell) showBatches() {
+	s.highlight(sectionBatches)
+	s.batches.reload()
+	s.show(s.batches, s.batches.content)
+}
+
+func (s *shell) showCampaigns() {
+	s.highlight(sectionCampaigns)
+	s.campaigns.reload()
+	s.show(s.campaigns, s.campaigns.content)
+}
+
+func (s *shell) showSettings() {
+	s.highlight(sectionSettings)
+	v := newSettingsView(s.dir, s.from, os.Getenv)
+	s.show(v, v.content)
+}
+
+func (s *shell) openBatch(b browse.Batch) {
+	var v *batchView
+	back := func() { s.show(v, v.content) }
+	v = newBatchView(s.dir, b, s.showBatches, func(rec string) { s.openRecord(rec, "Batch", back) })
+	s.highlight(sectionBatches)
+	s.show(v, v.content)
+}
+
+func (s *shell) openCampaign(id string) {
+	var v *campaignView
+	back := func() { v.reload(); s.show(v, v.content) }
+	v = newCampaignView(s.dir, id, s.showCampaigns, func(rec string) { s.openRecord(rec, "Campaign", back) })
+	s.highlight(sectionCampaigns)
+	s.show(v, v.content)
+}
+
+// openRecord opens a record, with back naming and going to wherever it was
+// opened from.
+func (s *shell) openRecord(dir, from string, back func()) {
+	v, err := newDetailViewFrom(dir, from, back)
 	if err != nil {
 		dialog.ShowError(err, s.window)
 		return
 	}
-	s.onRuns = false
-	s.show(v.content)
+	s.show(v, v.content)
 }
 
 // show puts a screen in the body. Fyne grows a window to whatever its content
 // asks for, so a screen sits in a scroll: one that asks for more room than the
 // window has scrolls, and the window keeps the size the person gave it.
-func (s *shell) show(screen fyne.CanvasObject) {
+func (s *shell) show(view any, screen fyne.CanvasObject) {
+	s.current = view
 	s.body.Objects = []fyne.CanvasObject{container.NewScroll(screen)}
 	s.body.Refresh()
 }
 
-// tick refreshes the Runs screen while it is showing. A record that is open
-// is left alone: re-reading it under the person reading it would move the
-// selection they are looking at.
+// tick re-reads the screen showing, so a run that finishes or a verdict that
+// lands shows up without a click. A record that is open is left alone:
+// re-reading it under the person reading it would move the selection they are
+// looking at.
 func (s *shell) tick() {
-	if s.onRuns {
-		s.runs.reload()
+	switch v := s.current.(type) {
+	case *runsView:
+		v.reload()
+	case *batchesView:
+		v.reload()
+	case *batchView:
+		v.reload()
+	case *campaignsView:
+		v.reload()
+	case *campaignView:
+		v.reload()
 	}
 }
 

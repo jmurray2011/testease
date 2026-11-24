@@ -21,7 +21,7 @@ func TestAScreenThatAsksForMoreRoomScrollsRatherThanGrowingTheWindow(t *testing.
 
 	huge := canvas.NewRectangle(nil)
 	huge.SetMinSize(fyne.NewSize(5000, 3000))
-	s.show(huge)
+	s.show(nil, huge)
 
 	if got := s.content.MinSize(); got.Width > openingSize.Width || got.Height > openingSize.Height {
 		t.Errorf("the window is asked for %v, want no more than %v", got, openingSize)

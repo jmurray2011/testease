@@ -421,7 +421,14 @@ func TestBatchWaitsForStartedChildrenWhenSavingTheNextStatusFails(t *testing.T) 
 	for range 2 {
 		<-invoker.started
 	}
-	if err := os.RemoveAll(batchDir); err != nil {
+	// The next save fails: batch.json is now a directory it cannot be renamed
+	// over. Removing the whole batch directory would do the same on unix, but
+	// Windows refuses to delete the logs the running children hold open.
+	record := filepath.Join(batchDir, "batch.json")
+	if err := os.Remove(record); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(record, "occupied"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	close(invoker.release["alpha"])

@@ -113,6 +113,15 @@ may be downloaded automatically by Go. `make build` produces the static trimmed
 binary. To install it as `testease`, set `GOBIN` to a directory already on your
 PATH before running `make install`.
 
+The desktop app, `testease-desktop`, browses the runs directory: the records,
+their steps and output, and the verdicts judges wrote. It is a separate Go
+module under `cmd/testease-desktop` because it needs cgo, a C compiler and the
+GL headers (on Debian or Ubuntu, `libgl1-mesa-dev xorg-dev libwayland-dev
+libxkbcommon-dev`; on Windows, MinGW-w64 gcc). `make desktop-validate` is its
+gate and `make desktop` builds it. It follows the system's light or dark mode,
+and finds the runs directory from `--runs-dir`, then `TESTEASE_RUNS_DIR`, then
+the folder last chosen in it.
+
 Some tests need real substrate and skip without it - a docker daemon for the
 provider tests, `TESTEASE_TEST_WINDOWS_CONTEXT` for the Windows probe. Skips
 are reported.

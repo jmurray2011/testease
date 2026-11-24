@@ -9,6 +9,7 @@ package main
 import (
 	"flag"
 	"os"
+	"os/exec"
 	"strings"
 	"time"
 
@@ -40,6 +41,8 @@ const sidebarWidth = 208
 
 func main() {
 	runsDir := flag.String("runs-dir", "", "where records are written (default $TESTEASE_RUNS_DIR, then the folder last chosen here)")
+	scenarioRoot := flag.String("scenario-root", "", "where scenarios are (default $TESTEASE_SCENARIO_ROOT, then the folder last chosen here)")
+	testease := flag.String("testease", "", "the testease binary runs are started with (default the one beside this app, then the one on PATH)")
 	flag.Parse()
 
 	a := app.NewWithID(appID)
@@ -48,6 +51,15 @@ func main() {
 	dir, from := resolveRunsDir(*runsDir, os.Getenv("TESTEASE_RUNS_DIR"), a.Preferences().String(prefRunsDir))
 	w := a.NewWindow("testease")
 	s := newShell(w, dir, from, func(chosen string) { a.Preferences().SetString(prefRunsDir, chosen) })
+	root, rootFrom := resolvePath(*scenarioRoot, "--scenario-root", os.Getenv("TESTEASE_SCENARIO_ROOT"), "TESTEASE_SCENARIO_ROOT", a.Preferences().String(prefScenarioRoot))
+	self, _ := os.Executable()
+	exe, exeFrom := findTestease(*testease, self, exec.LookPath)
+	s.useTools(tools{
+		scenarioRoot: root, scenarioFrom: rootFrom, testease: exe, testeaseFrom: exeFrom,
+		catalog:      os.Getenv("TESTEASE_TARGET_CATALOG"),
+		rememberRoot: func(chosen string) { a.Preferences().SetString(prefScenarioRoot, chosen) },
+	})
+	w.SetCloseIntercept(s.quit)
 	w.SetContent(s.content)
 	w.Resize(openingSize)
 
@@ -66,11 +78,13 @@ const (
 	sectionRuns navSection = iota
 	sectionBatches
 	sectionCampaigns
+	sectionScenarios
+	sectionActivity
 	sectionSettings
 	sections
 )
 
-var sectionNames = [sections]string{"Runs", "Batches", "Campaigns", "Settings"}
+var sectionNames = [sections]string{"Runs", "Batches", "Campaigns", "Scenarios", "Activity", "Settings"}
 
 // shell is the window: sections on the left, the current screen on the right.
 type shell struct {
@@ -86,6 +100,12 @@ type shell struct {
 	// re-read and back knows where it is.
 	current any
 
+	tools tools
+	jobs  []*jobView
+	// uiCall stands in for fyne.Do in tests, whose driver runs it inline on
+	// whatever goroutine calls it.
+	uiCall func(func())
+
 	buttons [sections]*widget.Button
 	where   *widget.Label
 	body    *fyne.Container
@@ -97,7 +117,7 @@ func newShell(w fyne.Window, dir, from string, remember func(string)) *shell {
 
 	name := widget.NewLabelWithStyle("testease", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 	nav := container.NewVBox(name)
-	shows := [sections]func(){s.showRuns, s.showBatches, s.showCampaigns, s.showSettings}
+	shows := [sections]func(){s.showRuns, s.showBatches, s.showCampaigns, s.showScenarios, s.showActivity, s.showSettings}
 	for i := range sections {
 		b := widget.NewButton(sectionNames[i], shows[i])
 		b.Alignment = widget.ButtonAlignLeading
@@ -203,6 +223,7 @@ func (s *shell) showCampaigns() {
 func (s *shell) showSettings() {
 	s.highlight(sectionSettings)
 	v := newSettingsView(s.dir, s.from, os.Getenv)
+	v.addTools(s.tools)
 	s.show(v, v.content)
 }
 
@@ -258,6 +279,8 @@ func (s *shell) tick() {
 	case *campaignsView:
 		v.reload()
 	case *campaignView:
+		v.reload()
+	case *activityView:
 		v.reload()
 	}
 }

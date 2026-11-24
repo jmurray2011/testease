@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"testing"
 
 	"fyne.io/fyne/v2"
@@ -62,5 +63,47 @@ func TestARecordOpenedFromABatchGoesBackToTheBatch(t *testing.T) {
 	d.back()
 	if _, ok := s.current.(*batchView); !ok {
 		t.Errorf("back went to %T, want the batch", s.current)
+	}
+}
+
+// A run started from a scenario shows live under Activity, and the window
+// asks before quitting while one is going.
+func TestARunStartedHereIsShownUnderActivity(t *testing.T) {
+	test.NewTempApp(t)
+	t.Setenv(fakeEnv, "finish")
+
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := test.NewWindow(nil)
+	defer w.Close()
+	s := newShell(w, t.TempDir(), "--runs-dir", func(string) {})
+	s.useTools(tools{testease: self, testeaseFrom: "--testease"})
+	s.uiCall = func(func()) {}
+	w.SetContent(s.content)
+
+	s.startJob("run hello", []string{"run", "hello"})
+	jv, ok := s.current.(*jobView)
+	if !ok || len(s.jobs) != 1 || s.section != sectionActivity {
+		t.Fatalf("showing %T, jobs %d, section %v", s.current, len(s.jobs), s.section)
+	}
+	jv.j.wait()
+	jv.refresh()
+	if text, _ := jv.statusText(); text != "measured" {
+		t.Errorf("status = %q", text)
+	}
+	if got := jv.cellText(1, jcolStatus); got != "measured" {
+		t.Errorf("step 2 = %q", got)
+	}
+
+	if jv.stop.Text != "Stop" || !jv.stop.Disabled() {
+		t.Errorf("a finished job's button reads %q, disabled %v", jv.stop.Text, jv.stop.Disabled())
+	}
+
+	s.showActivity()
+	a := s.current.(*activityView)
+	if got := a.cellText(0, acolCommand); got != "run hello" {
+		t.Errorf("activity = %q", got)
 	}
 }

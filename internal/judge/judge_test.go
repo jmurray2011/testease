@@ -363,3 +363,23 @@ func TestUnknownJudgeIsNotAPanic(t *testing.T) {
 		t.Fatalf("error is %T, want *judge.UnknownJudgeError", err)
 	}
 }
+
+func TestOnlyAPassIsAPass(t *testing.T) {
+	t.Parallel()
+
+	// Never invent success. Anything that is not one of the words a judge uses
+	// for "no worse than before" has to fail the check, including words no
+	// judge has yet.
+	for _, verdict := range []string{judge.Pass, judge.Promote, judge.Established, judge.Restored, judge.ReleaseReady} {
+		if !judge.Passed(verdict) {
+			t.Errorf("%q is a pass and did not read as one", verdict)
+		}
+	}
+	for _, verdict := range []string{
+		judge.Regressed, judge.Hold, judge.Unverified, judge.Unmet, "something new", "",
+	} {
+		if judge.Passed(verdict) {
+			t.Errorf("%q read as a pass", verdict)
+		}
+	}
+}

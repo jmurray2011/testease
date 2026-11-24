@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jmurray2011/testease/internal/backend/private"
 	"github.com/jmurray2011/testease/internal/target"
 )
 
@@ -27,8 +28,14 @@ func TestCarryScratchIsRunOwnedAndRecoverableByReap(t *testing.T) {
 		t.Fatalf("staged scratch = %+v, want it under %s", staged, root)
 	}
 	scratch := filepath.Dir(staged[0].Local)
-	if info, err := os.Stat(scratch); err != nil || info.Mode().Perm() != 0o700 {
-		t.Fatalf("scratch mode = %v, %v; want 0700", info, err)
+	if err := private.Verify(scratch, 0o700); err != nil {
+		t.Fatalf("scratch is not private: %v", err)
+	}
+	if err := private.Verify(root, 0o700); err != nil {
+		t.Fatalf("scratch root is not private: %v", err)
+	}
+	if err := private.Verify(filepath.Join(scratch, "owner.json"), 0o600); err != nil {
+		t.Fatalf("scratch owner is not private: %v", err)
 	}
 	body, err := os.ReadFile(filepath.Join(scratch, "owner.json"))
 	if err != nil {

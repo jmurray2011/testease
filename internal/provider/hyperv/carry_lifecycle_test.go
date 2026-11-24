@@ -9,13 +9,14 @@ import (
 
 	backend "github.com/jmurray2011/testease/internal/backend/docker"
 	"github.com/jmurray2011/testease/internal/target"
+	"github.com/jmurray2011/testease/internal/target/fakeexec"
 )
 
 func TestCarriedMediaIsConsumedByTheNextOneShotExecution(t *testing.T) {
 	t.Parallel()
 
 	p := New(Options{
-		Client:      backend.Client{Bin: "/bin/true"},
+		Client:      backend.Client{Bin: fakeexec.Program(t, "docker", "true", nil)},
 		ScratchRoot: filepath.Join(t.TempDir(), "runtime", "carry-run"),
 		RunID:       "carry-run",
 	})

@@ -80,8 +80,36 @@ func TestBatchesAreListedWithTheirTestsAndJudgment(t *testing.T) {
 		old.Judge != "expect" || old.Version != "3" || old.Verdict != "regressed" {
 		t.Errorf("first test = %+v", old)
 	}
+	if !old.VerdictShipped || old.VerdictPassed || !b.Tests[1].VerdictPassed {
+		t.Errorf("a shipped judge's verdicts are placed in its pass set: %+v, %+v", old, b.Tests[1])
+	}
 	if b.Tests[2].Name != "api-check" {
 		t.Errorf("an unnamed test is named by its scenario: %+v", b.Tests[2])
+	}
+}
+
+// An external judge's pass set is its caller's to say, so its verdict is shown
+// as written and never called passing or failing.
+func TestABatchVerdictFromAnExternalJudgeIsNotPlaced(t *testing.T) {
+	t.Parallel()
+
+	runs := t.TempDir()
+	dir := smokeSet(t, runs, true)
+	writeJSON(t, filepath.Join(dir, "judgment.json"), batch.Judgment{
+		Schema: 1, BatchID: "smoke-set-20261123T171533.000000000Z", Status: "judged",
+		Tests: []batch.TestJudgment{
+			{Name: "install-old", RunID: "install-check-20261123T171533Z-install-old", Status: "judged", Judge: "house-rules", Version: "1", Verdict: "pass"},
+			{Name: "install-new", RunID: "install-check-20261123T171533Z-install-new", Status: "judged", Judge: "house-rules", Version: "1", Verdict: "pass"},
+			{Name: "api-check", Status: "not-measured"},
+		},
+	})
+
+	got, err := browse.Batches(runs)
+	if err != nil {
+		t.Fatalf("Batches: %v", err)
+	}
+	if tt := got[0].Tests[0]; tt.VerdictShipped || tt.VerdictPassed || tt.Verdict != "pass" {
+		t.Errorf("test = %+v", tt)
 	}
 }
 

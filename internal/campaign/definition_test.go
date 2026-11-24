@@ -9,16 +9,19 @@ import (
 	"github.com/jmurray2011/testease/internal/scenario"
 )
 
+// writeDefinition writes a campaign whose hooks, named <base>.sh in body and
+// hooks, exit 0. On Windows each is written as hookName(base) instead, and
+// body names it so: a hook there runs by its extension.
 func writeDefinition(t *testing.T, body string, hooks ...string) string {
 	t.Helper()
 	dir := t.TempDir()
+	for _, hook := range hooks {
+		name := hookName(strings.TrimSuffix(hook, ".sh"))
+		body = strings.ReplaceAll(body, hook, name)
+		writeHook(t, filepath.Join(dir, name), hookExitsZero)
+	}
 	if err := os.WriteFile(filepath.Join(dir, "campaign.yaml"), []byte(body), 0o600); err != nil {
 		t.Fatal(err)
-	}
-	for _, hook := range hooks {
-		if err := os.WriteFile(filepath.Join(dir, hook), []byte("#!/bin/sh\nexit 0\n"), 0o700); err != nil {
-			t.Fatal(err)
-		}
 	}
 	return dir
 }
@@ -129,7 +132,7 @@ lifecycle:
 	if !filepath.IsAbs(definition.Dir) {
 		t.Fatalf("definition.Dir = %q; hooks run with Dir as the child's cwd, so a relative Dir makes the hook path resolve against itself", definition.Dir)
 	}
-	if got, want := HookPath(definition, definition.Lifecycle.Prepare), filepath.Join(definition.Dir, "prepare.sh"); got != want {
+	if got, want := HookPath(definition, definition.Lifecycle.Prepare), filepath.Join(definition.Dir, hookName("prepare")); got != want {
 		t.Fatalf("hook path = %q, want %q", got, want)
 	}
 }

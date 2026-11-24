@@ -25,11 +25,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jmurray2011/testease/internal/backend/filemode"
 	sshbackend "github.com/jmurray2011/testease/internal/backend/ssh"
 	ssmbackend "github.com/jmurray2011/testease/internal/backend/ssm"
 	winrmbackend "github.com/jmurray2011/testease/internal/backend/winrm"
 	"github.com/jmurray2011/testease/internal/provider/fingerprint"
-	"github.com/jmurray2011/testease/internal/backend/filemode"
 	"github.com/jmurray2011/testease/internal/target"
 )
 

@@ -2,21 +2,25 @@ package docker
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
 	"time"
 )
 
+func fakeExecStreamsThenSleeps(c fakeCall) int {
+	if c.arg(1) == "exec" {
+		_, _ = fmt.Fprint(c.stdout, "first")
+		time.Sleep(10 * time.Second)
+	}
+	return 0
+}
+
 func TestFetchReturnsAStreamBeforeTheRemoteCommandCompletes(t *testing.T) {
 	t.Parallel()
 
-	client := fakeDocker(t, `
-if [ "$1" = exec ]; then
-  printf first
-  sleep 10
-fi
-`)
+	client := fakeDocker(t, "exec-streams-then-sleeps", nil)
 	session := &Session{Client: client, Container: "box"}
 	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
 	defer cancel()
@@ -41,16 +45,19 @@ fi
 	_ = reader.Close()
 }
 
+func fakeExecFailsLate(c fakeCall) int {
+	if c.arg(1) == "exec" {
+		_, _ = fmt.Fprint(c.stdout, "partial")
+		_, _ = fmt.Fprintln(c.stderr, "remote-broke")
+		return 42
+	}
+	return 0
+}
+
 func TestFetchSurfacesALateRemoteFailureFromTheReader(t *testing.T) {
 	t.Parallel()
 
-	client := fakeDocker(t, `
-if [ "$1" = exec ]; then
-  printf partial
-  echo remote-broke >&2
-  exit 42
-fi
-`)
+	client := fakeDocker(t, "exec-fails-late", nil)
 	session := &Session{Client: client, Container: "box"}
 	reader, err := session.Fetch(context.Background(), "/partial.dump")
 	if err != nil {

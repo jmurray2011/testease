@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -56,7 +55,9 @@ func Open(dir string) (*Writer, error) {
 	}
 
 	path := filepath.Join(dir, EventsFile)
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	// Read as well as append: Windows grants a lock only on a handle opened
+	// for reading or for whole-file writing, and append alone is neither.
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR|os.O_APPEND, 0o644)
 	if err != nil {
 		return nil, fmt.Errorf("open %s: %w", path, err)
 	}
@@ -89,7 +90,7 @@ func WriterLocked(dir string) (bool, error) {
 	}
 	defer func() { _ = f.Close() }()
 	if err := lockExclusive(f); err != nil {
-		if errors.Is(err, syscall.EWOULDBLOCK) || errors.Is(err, syscall.EAGAIN) {
+		if lockContended(err) {
 			return true, nil
 		}
 		return false, err

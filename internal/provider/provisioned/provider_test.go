@@ -14,7 +14,10 @@ import (
 	"github.com/jmurray2011/testease/internal/target"
 )
 
-type mediaSession struct{ body []byte }
+type mediaSession struct {
+	body []byte
+	mode fs.FileMode
+}
 
 func (s *mediaSession) Run(context.Context, []string, target.RunOpts) (target.Result, error) {
 	return target.Result{}, nil
@@ -24,8 +27,9 @@ func (s *mediaSession) RunScript(context.Context, []byte, []string, target.RunOp
 	return target.Result{}, nil
 }
 
-func (s *mediaSession) Put(_ context.Context, body io.Reader, _ string, _ fs.FileMode) error {
+func (s *mediaSession) Put(_ context.Context, body io.Reader, _ string, mode fs.FileMode) error {
 	s.body, _ = io.ReadAll(body)
+	s.mode = mode
 	return nil
 }
 
@@ -74,6 +78,46 @@ func TestProvisionedTargetStagesAndVerifiesNamedMedia(t *testing.T) {
 	}
 	if string(session.body) != string(body) {
 		t.Errorf("staged %q", session.body)
+	}
+}
+
+// A collector staged from a runner that has no executable bit - Windows -
+// still runs on the Linux host, because its shebang says it is meant to.
+func TestProvisionedMediaKeepsExecutableIntent(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		body string
+		mode os.FileMode
+		want fs.FileMode
+	}{
+		{"script", "#!/bin/sh\ntrue\n", 0o755, 0o500},
+		{"document", "plain bytes", 0o644, 0o400},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			file := filepath.Join(t.TempDir(), tc.name)
+			if err := os.WriteFile(file, []byte(tc.body), tc.mode); err != nil {
+				t.Fatal(err)
+			}
+			session := &mediaSession{}
+			p := New(Options{
+				Driver: &fakePlatform{}, Name: "ec2", RunID: "run", Runner: "user@host",
+				Dial: func(context.Context, Machine) (target.Session, error) { return session, nil },
+			})
+			tgt, err := p.Resolve(context.Background(), target.Spec{Host: "box", Image: "ami-fictional"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := tgt.(target.MediaStager).Stage(context.Background(), []target.Media{{
+				Source: file, Dest: "/tmp/" + tc.name, ReadOnly: true,
+			}}); err != nil {
+				t.Fatal(err)
+			}
+			if session.mode.Perm() != tc.want {
+				t.Errorf("staged mode = %o, want %o", session.mode.Perm(), tc.want)
+			}
+		})
 	}
 }
 

@@ -65,7 +65,9 @@ func (c Client) Drive(ctx context.Context, spec DriveSpec, opt target.RunOpts) (
 	// The container writes as whoever is running testease, so the files it
 	// leaves in the workspace can be read afterwards without a root-owned
 	// surprise.
-	args = append(args, "-u", fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()), "-e", "HOME=/tmp")
+	owner, _, _ := driveOwner(os.Getuid(), os.Getgid())
+	args = append(args, owner...)
+	args = append(args, "-e", "HOME=/tmp")
 
 	if spec.Workspace != "" {
 		mount := spec.Mount
@@ -140,6 +142,20 @@ func (c Client) Drive(ctx context.Context, spec DriveSpec, opt target.RunOpts) (
 	return result, nil
 }
 
+// driveOwner is who a drive container runs as, and who owns the files staged
+// into it, given the runner's uid and gid.
+//
+// A platform without uids answers -1, as os.Getuid does on Windows. There is
+// then no runner-owned uid to match: the container keeps its image's user, and
+// staged files belong to root. Windows reports its files 0666 and directories
+// 0777, so the archive leaves them writable by whichever user that is.
+func driveOwner(uid, gid int) (flags []string, fileUID, fileGID int) {
+	if uid < 0 || gid < 0 {
+		return nil, 0, 0
+	}
+	return []string{"-u", fmt.Sprintf("%d:%d", uid, gid)}, uid, gid
+}
+
 // DriveRemote runs a drive container on a daemon that cannot bind the
 // runner's filesystem. The scenario, empty result workspace, and declared
 // media travel through the Docker API before the container starts, and the
@@ -161,7 +177,9 @@ func (c Client) DriveRemote(ctx context.Context, spec DriveSpec, opt target.RunO
 	if spec.Network != "" {
 		args = append(args, "--network", spec.Network)
 	}
-	args = append(args, "-u", fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()), "-e", "HOME=/tmp")
+	owner, uid, gid := driveOwner(os.Getuid(), os.Getgid())
+	args = append(args, owner...)
+	args = append(args, "-e", "HOME=/tmp")
 	for _, k := range slices.Sorted(maps.Keys(spec.Env)) {
 		args = append(args, "-e", k+"="+spec.Env[k])
 	}
@@ -187,12 +205,12 @@ func (c Client) DriveRemote(ctx context.Context, spec DriveSpec, opt target.RunO
 		if mount == "" {
 			mount = "/workspace"
 		}
-		if err := c.copyDirectoryIn(ctx, name, spec.Workspace, mount, os.Getuid(), os.Getgid()); err != nil {
+		if err := c.copyDirectoryIn(ctx, name, spec.Workspace, mount, uid, gid); err != nil {
 			return target.Result{RC: -1}, fmt.Errorf("stage the workspace for the remote drive: %w", err)
 		}
 	}
 	for _, media := range spec.Media {
-		if err := c.copyMediaIn(ctx, name, media, os.Getuid(), os.Getgid()); err != nil {
+		if err := c.copyMediaIn(ctx, name, media, uid, gid); err != nil {
 			return target.Result{RC: -1}, fmt.Errorf("stage drive media %s at %s: %w", media.Source, media.Dest, err)
 		}
 	}

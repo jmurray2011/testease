@@ -110,7 +110,7 @@ schema: 1
 name: package-upgrade-leaves-it-running
 question: what does an upgrade refusal leave behind?
 params:
-  store: {default: "%s"}
+  store: {default: '%s'}
 hosts:
   box:
     provider: docker

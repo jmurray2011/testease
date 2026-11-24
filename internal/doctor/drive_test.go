@@ -154,7 +154,7 @@ func TestDoctorChecksTheDriveImageAndMediaBeforeRunning(t *testing.T) {
 	}
 	body = []byte(strings.Replace(string(body),
 		"probe: drive://suite:1",
-		"probe: drive://suite:1\n    media: [\""+suite+":/suite:ro\"]", 1))
+		"probe: drive://suite:1\n    media: ['"+suite+":/suite:ro']", 1))
 	if err := os.WriteFile(filepath.Join(dir, "scenario.yaml"), body, 0o644); err != nil {
 		t.Fatal(err)
 	}

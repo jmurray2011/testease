@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jmurray2011/testease/internal/target"
+	"github.com/jmurray2011/testease/internal/target/fakeexec"
 )
 
 // Systems Manager is the transport that can lose evidence, and these are the
@@ -440,17 +441,8 @@ func TestBucketLocationNamesTheSigningRegion(t *testing.T) {
 func TestATransferIsSignedForTheBucketsRegionNotTheRunsRegion(t *testing.T) {
 	t.Parallel()
 
-	dir := t.TempDir()
-	calls := dir + "/calls"
-	fake := dir + "/aws"
-	script := "#!/bin/sh\nprintf '%s\\n' \"$*\" >> " + calls + "\n" +
-		"case \"$*\" in\n" +
-		"  *get-bucket-location*) echo None ;;\n" +
-		"  *presign*) echo https://lab-media.s3.amazonaws.com/x?sig ;;\n" +
-		"esac\n"
-	if err := os.WriteFile(fake, []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	calls := t.TempDir() + "/calls"
+	fake := fakeexec.Program(t, "aws", "aws-transfer", map[string]string{"calls": calls})
 	c := Client{Profile: "lab", Region: "us-east-2", Bin: fake}
 	url, err := c.presignTransfer(t.Context(), "s3://lab-media/scratch/testease-transfer/abc")
 	if err != nil {

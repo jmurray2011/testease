@@ -129,9 +129,14 @@ func TestRenderCompareAndPackageStartJobs(t *testing.T) {
 	if jv := waitJob(t, s); !slices.Equal(jv.args, renderArgs(runs, rec, "table")) || jv.record != rec {
 		t.Errorf("render args %q, record %q: Open record should open what was rendered", jv.args, jv.record)
 	}
-	s.compareRecords(rec, []string{older})
-	if jv := waitJob(t, s); !slices.Equal(jv.args, compareArgs(runs, rec, []string{older})) || jv.record != rec {
-		t.Errorf("compare args %q, record %q", jv.args, jv.record)
+	s.compareRecords([]string{rec, older}, "Run", s.showRuns)
+	cv, ok := s.current.(*compareView)
+	if !ok || cv.reproduce.Hidden {
+		t.Fatalf("compare opened %T, reproduce offered: %v", s.current, ok && !cv.reproduce.Hidden)
+	}
+	test.Tap(cv.reproduce.Button)
+	if jv := waitJob(t, s); !slices.Equal(jv.args, compareArgs(runs, older, []string{rec})) {
+		t.Errorf("reproduce args %q", jv.args)
 	}
 
 	upgradeCampaign(t, runs, true)

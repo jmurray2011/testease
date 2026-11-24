@@ -205,6 +205,7 @@ func (s *shell) setDir(dir, from string) {
 	}
 	s.home = newHomeView(dir, func(rec string) { s.openRecord(rec, "Home", s.showHome) }, s.showScenarioRuns)
 	s.runs = newRunsView(dir, func(rec string) { s.openRecord(rec, "Runs", s.showRuns) })
+	s.runs.compare.set(s.chooseRunsToCompare)
 	s.batches = newBatchesView(dir, s.openBatch)
 	s.batches.run.set(s.chooseBatchFile)
 	s.campaigns = newCampaignsView(dir, func(c browse.Campaign) { s.openCampaign(c.ID) })
@@ -292,7 +293,7 @@ func (s *shell) openRecord(dir, from string, back func()) {
 	v.onOpenCell = func(cell string) { s.openRecord(cell, "Matrix", func() { s.show(v, v.content) }) }
 	v.judge.set(func() { s.startRecordJob(dir, "judge "+filepath.Base(dir), judgeArgs(s.dir, dir)) })
 	v.render.set(func() { s.chooseRender(dir) })
-	v.compare.set(func() { s.chooseCompare(dir) })
+	v.compare.set(func() { s.chooseCompare(dir, func() { s.show(v, v.content) }) })
 	s.show(v, v.content)
 }
 

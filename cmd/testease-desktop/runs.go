@@ -59,7 +59,9 @@ type runsView struct {
 	count    *widget.Label
 	message  *widget.Label
 	table    *widget.Table
-	content  fyne.CanvasObject
+	// compare puts runs picked from the listing side by side.
+	compare *action
+	content fyne.CanvasObject
 }
 
 func newRunsView(dir string, onOpen func(dir string)) *runsView {
@@ -72,7 +74,8 @@ func newRunsView(dir string, onOpen func(dir string)) *runsView {
 
 	v.filter = widget.NewEntry()
 	v.filter.OnChanged = func(string) { v.apply() }
-	refresh := widget.NewButtonWithIcon("Refresh", theme.ViewRefreshIcon(), v.reload)
+	// Refresh is an icon alone, so the header keeps room for the filters.
+	refresh := widget.NewButtonWithIcon("", theme.ViewRefreshIcon(), v.reload)
 
 	v.message = widget.NewLabel("")
 	v.message.Wrapping = fyne.TextWrapWord
@@ -145,15 +148,16 @@ func newRunsView(dir string, onOpen func(dir string)) *runsView {
 	v.since.SetSelected(firstSet(prefs.String(prefRunsSince), anyTime))
 	v.choosing = false
 	v.clearAll = widget.NewButtonWithIcon("Clear", theme.ContentClearIcon(), v.clear)
+	v.compare = newAction("Compare…", theme.ListIcon())
 
 	v.filter.SetPlaceHolder("Search runs")
 	height := v.filter.MinSize().Height
 	header := container.NewHBox(title, v.count, layout.NewSpacer(),
-		container.NewGridWrap(fyne.NewSize(200, height), v.scenario),
+		container.NewGridWrap(fyne.NewSize(180, height), v.scenario),
 		container.NewGridWrap(fyne.NewSize(180, height), v.outcome),
 		container.NewGridWrap(fyne.NewSize(140, height), v.since),
-		container.NewGridWrap(fyne.NewSize(200, height), v.filter),
-		v.clearAll, refresh)
+		container.NewGridWrap(fyne.NewSize(180, height), v.filter),
+		v.clearAll, v.compare.Button, refresh)
 	footer := widget.NewLabel("Status is what the run measured. Verdicts come only from judges; a run with no verdict has not been judged yet.")
 	footer.Importance = widget.LowImportance
 	footer.Wrapping = fyne.TextWrapWord

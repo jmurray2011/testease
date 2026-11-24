@@ -419,3 +419,30 @@ func TestTheCloudRunnerStartsAsThisOneAndIsRemembered(t *testing.T) {
 		t.Errorf("a new screen starts with runner %q", again.runner.Text)
 	}
 }
+
+// The account a cloud look was made in is remembered like a chosen folder:
+// TESTEASE_AWS_* still come first, as they do for the CLI.
+func TestTheCloudAccountIsRememberedUnlessTheEnvironmentNamesOne(t *testing.T) {
+	test.NewTempApp(t)
+	t.Setenv("TESTEASE_AWS_PROFILE", "")
+	t.Setenv("TESTEASE_AWS_REGION", "")
+
+	cli := &fakeCLI{answers: map[string]string{"targets": standingJSON}}
+	v := newFakeTargets(t, cli)
+	v.profile.SetText("lab")
+	v.region.SetText("us-east-2")
+	v.cluster.SetText("runs")
+	v.choose(placeECS)
+
+	again := newFakeTargets(t, cli)
+	if again.profile.Text != "lab" || again.region.Text != "us-east-2" || again.cluster.Text != "runs" {
+		t.Errorf("a new screen starts with %q %q %q", again.profile.Text, again.region.Text, again.cluster.Text)
+	}
+
+	t.Setenv("TESTEASE_AWS_PROFILE", "from-env")
+	t.Setenv("TESTEASE_AWS_REGION", "eu-west-1")
+	fromEnv := newFakeTargets(t, cli)
+	if fromEnv.profile.Text != "from-env" || fromEnv.region.Text != "eu-west-1" {
+		t.Errorf("with the environment set, the screen starts with %q %q", fromEnv.profile.Text, fromEnv.region.Text)
+	}
+}

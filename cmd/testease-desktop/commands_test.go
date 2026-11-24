@@ -209,3 +209,67 @@ func TestACampaignFolderStartsACampaignRun(t *testing.T) {
 		t.Errorf("args %q", jv.args)
 	}
 }
+
+// A path picked in a dialog is written the platform's way in the command.
+func TestAPickedPathIsWrittenThePlatformsWay(t *testing.T) {
+	if got := pickedPath("C:/Users/josh/two-hellos.yaml"); got != filepath.FromSlash("C:/Users/josh/two-hellos.yaml") {
+		t.Errorf("path = %q", got)
+	}
+}
+
+// Batch files and campaign folders live in different places; each picker
+// opens where it was last used, not where the other one was.
+func TestEachPickerOpensWhereItWasLastUsed(t *testing.T) {
+	test.NewTempApp(t)
+
+	batches, campaigns := t.TempDir(), t.TempDir()
+	rememberFolder(prefBatchFolder, filepath.Join(batches, "smoke.yaml"))
+	rememberFolder(prefCampaignFolder, filepath.Join(campaigns, "upgrade"))
+
+	if got := lastFolder(prefBatchFolder); got == nil || filepath.Base(got.Path()) != filepath.Base(batches) {
+		t.Errorf("batch picker opens at %v, want %s", got, batches)
+	}
+	if got := lastFolder(prefCampaignFolder); got == nil || filepath.Base(got.Path()) != filepath.Base(campaigns) {
+		t.Errorf("campaign picker opens at %v, want %s", got, campaigns)
+	}
+	if lastFolder("nothing-yet") != nil {
+		t.Error("a picker never used opens somewhere chosen for it")
+	}
+}
+
+// Overrides that are not flags are refused on the form, before it closes.
+func TestTheCampaignFormRefusesALineThatIsNotAFlag(t *testing.T) {
+	if overridesValid("--repeat=2\n\n--keep") != nil {
+		t.Error("refused good flags")
+	}
+	if overridesValid("repeat 2") == nil {
+		t.Error("took a line that is not a flag")
+	}
+}
+
+// A batch or campaign that did not finish cleanly can keep its runs' targets
+// too, so its job offers the way to them.
+func TestAStoppedBatchOffersItsKeptTargets(t *testing.T) {
+	test.NewTempApp(t)
+
+	v := newJobView("batch sleepy", batchRunArgs("r", "s", "sleepy.yaml"), "r", func() {}, func() {}, func(string) {})
+	v.s = jobState{Done: true, Exit: 12}
+	v.render()
+	if v.targets.Hidden {
+		t.Error("no Kept targets on a stopped batch")
+	}
+
+	ok := newJobView("batch hello", batchRunArgs("r", "s", "hello.yaml"), "r", func() {}, func() {}, func(string) {})
+	ok.s = jobState{Done: true}
+	ok.render()
+	if !ok.targets.Hidden {
+		t.Error("Kept targets on a batch that finished cleanly")
+	}
+
+	judged := newJobView("judge batch", batchJudgeArgs("r", "b"), "r", func() {}, func() {}, func(string) {})
+	judged.s = jobState{Done: true, Exit: 1}
+	judged.render()
+	if !judged.targets.Hidden {
+		t.Error("Kept targets on a judge, which starts no targets")
+	}
+}

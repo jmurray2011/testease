@@ -55,6 +55,7 @@ func (s *shell) chooseScenarioRoot() {
 		s.tools.scenarioRoot, s.tools.scenarioFrom = uri.Path(), "chosen here"
 		s.showScenarios()
 	}, s.window)
+	d.Resize(pickerSize)
 	d.Show()
 }
 
@@ -187,17 +188,25 @@ func (s *shell) showTargets() {
 	v.reload()
 }
 
+// pickerSize is big enough to find a file in; Fyne's own is small.
+var pickerSize = fyne.NewSize(900, 640)
+
 // chooseBatchFile asks for a batch file and runs it.
 func (s *shell) chooseBatchFile() {
 	d := dialog.NewFileOpen(func(f fyne.URIReadCloser, err error) {
 		if err != nil || f == nil {
 			return
 		}
-		path := f.URI().Path()
+		path := pickedPath(f.URI().Path())
 		_ = f.Close()
+		rememberFolder(prefBatchFolder, path)
 		s.runBatch(path)
 	}, s.window)
 	d.SetFilter(storage.NewExtensionFileFilter([]string{".yaml", ".yml"}))
+	if l := lastFolder(prefBatchFolder); l != nil {
+		d.SetLocation(l)
+	}
+	d.Resize(pickerSize)
 	d.Show()
 }
 
@@ -213,8 +222,10 @@ func (s *shell) chooseCampaign() {
 		if err != nil || uri == nil {
 			return
 		}
-		dir := uri.Path()
+		dir := pickedPath(uri.Path())
+		rememberFolder(prefCampaignFolder, dir)
 		extra := widget.NewMultiLineEntry()
+		extra.Validator = overridesValid
 		extra.SetPlaceHolder("--repeat=3\n--target=lab-box")
 		extra.SetMinRowsVisible(4)
 		form := dialog.NewForm("Run campaign "+filepath.Base(dir), "Run", "Cancel", []*widget.FormItem{
@@ -231,6 +242,10 @@ func (s *shell) chooseCampaign() {
 		form.Resize(fyne.NewSize(560, 320))
 		form.Show()
 	}, s.window)
+	if l := lastFolder(prefCampaignFolder); l != nil {
+		d.SetLocation(l)
+	}
+	d.Resize(pickerSize)
 	d.Show()
 }
 

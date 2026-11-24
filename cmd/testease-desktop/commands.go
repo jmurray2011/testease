@@ -3,6 +3,9 @@ package main
 import (
 	"path/filepath"
 	"strings"
+
+	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/storage"
 )
 
 // judgeArgs reads a saved record again. With no --judge, testease uses the
@@ -42,20 +45,79 @@ func campaignRunArgs(runsDir, scenarioRoot, dir, extra string) ([]string, error)
 	return append(args, more...), nil
 }
 
-// globalsWithValue are testease's global flags that take the next argument.
-var globalsWithValue = map[string]bool{"--runs-dir": true, "--scenario-root": true, "--log-level": true, "--log-format": true}
+// flagsWithValue are the flags this app puts before a command's own
+// arguments that take the next argument.
+var flagsWithValue = map[string]bool{
+	"--runs-dir": true, "--scenario-root": true, "--log-level": true, "--log-format": true, "--campaign-root": true,
+}
 
-// command is the testease command args name: the first argument that is not
-// a global flag or a global flag's value.
-func command(args []string) string {
+// commandWords is the command args name, like [run hello] or [batch run
+// smoke.yaml]: the arguments that are not those flags or their values.
+func commandWords(args []string) []string {
+	var words []string
 	for i := 0; i < len(args); i++ {
 		a := args[i]
-		if !strings.HasPrefix(a, "-") {
-			return a
-		}
-		if globalsWithValue[a] {
+		switch {
+		case !strings.HasPrefix(a, "-"):
+			words = append(words, a)
+		case flagsWithValue[a]:
 			i++
 		}
 	}
+	return words
+}
+
+// command is the testease command args name.
+func command(args []string) string {
+	if w := commandWords(args); len(w) > 0 {
+		return w[0]
+	}
 	return ""
+}
+
+// startsTargets is whether the command stands targets up: a run, or a batch
+// or campaign of runs. A judge or doctor starts none.
+func startsTargets(args []string) bool {
+	w := commandWords(args)
+	switch {
+	case len(w) > 0 && w[0] == "run":
+		return true
+	case len(w) > 1 && (w[0] == "batch" || w[0] == "campaign") && w[1] == "run":
+		return true
+	}
+	return false
+}
+
+// pickedPath is a path a dialog gave, written the platform's way.
+func pickedPath(p string) string { return filepath.FromSlash(p) }
+
+// Where each picker opens: the folder it was last used in. This is only
+// where to browse from; it changes nothing that is measured.
+const (
+	prefBatchFolder    = "batch-folder"
+	prefCampaignFolder = "campaign-folder"
+)
+
+// rememberFolder keeps the folder holding what was picked: a batch file's
+// folder, or the folder a campaign's folder sits in.
+func rememberFolder(key, picked string) {
+	fyne.CurrentApp().Preferences().SetString(key, filepath.Dir(picked))
+}
+
+func lastFolder(key string) fyne.ListableURI {
+	dir := fyne.CurrentApp().Preferences().String(key)
+	if dir == "" {
+		return nil
+	}
+	l, err := storage.ListerForURI(storage.NewFileURI(dir))
+	if err != nil {
+		return nil
+	}
+	return l
+}
+
+// overridesValid refuses, on the form, a line that is not a flag.
+func overridesValid(text string) error {
+	_, err := runRequest{Extra: text}.extra()
+	return err
 }

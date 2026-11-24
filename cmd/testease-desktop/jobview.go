@@ -120,7 +120,7 @@ func (v *jobView) render() {
 	if v.s.Done && v.recordDir() != "" {
 		v.open.Enable()
 	}
-	if v.isRun && v.s.Done && v.s.Status != "" && v.s.Status != string(record.StatusMeasured) {
+	if v.keptTargets() {
 		v.targets.Show()
 	}
 	out := v.s.Log
@@ -162,6 +162,20 @@ func (v *jobView) stopOrKill() {
 	if err := v.j.stop(); err != nil {
 		v.s.Log += "could not stop the run: " + err.Error() + "\n"
 		v.render()
+	}
+}
+
+// keptTargets is whether the job may have left targets standing: a run that
+// says it did not measure cleanly, or a batch or campaign of runs that did
+// not exit cleanly.
+func (v *jobView) keptTargets() bool {
+	switch {
+	case !v.s.Done || !startsTargets(v.args):
+		return false
+	case v.isRun:
+		return v.s.Status != "" && v.s.Status != string(record.StatusMeasured)
+	default:
+		return v.s.Exit != 0
 	}
 }
 

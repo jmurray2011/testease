@@ -128,7 +128,11 @@ func newRunsView(dir string, onOpen func(dir string)) *runsView {
 			if v.choosing {
 				return
 			}
-			prefs.SetString(key, picked)
+			if picked == anyScenario || picked == anyOutcome || picked == anyTime {
+				prefs.RemoveValue(key)
+			} else {
+				prefs.SetString(key, picked)
+			}
 			v.apply()
 		}
 	}

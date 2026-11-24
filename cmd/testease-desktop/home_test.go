@@ -148,3 +148,17 @@ func TestHomeSaysWhenNothingNeedsALook(t *testing.T) {
 		t.Error("all clear not shown when nothing needs a look")
 	}
 }
+
+// Home names a failure in its judge's own word, and a broken measurement by
+// the status the run recorded.
+func TestNeedsALookSaysWhatTheRecordSays(t *testing.T) {
+	failed := judgedRun("a-20261124T090000Z", "a", false)
+	failed.Verdicts[0].Verdict = "regressed"
+	if got := attentionWord(failed); got != "regressed" {
+		t.Errorf("failed run reads %q", got)
+	}
+	broken := browse.Run{Status: "probe-fail"}
+	if got := attentionWord(broken); got != "probe-fail" {
+		t.Errorf("broken run reads %q", got)
+	}
+}

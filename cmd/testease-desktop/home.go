@@ -68,6 +68,17 @@ func summarize(runs []browse.Run, status func(browse.Run) string, now time.Time)
 	return s
 }
 
+// attentionWord is what the record itself says went wrong: the failing
+// judge's verdict, or the status a broken measurement recorded.
+func attentionWord(r browse.Run) string {
+	for _, v := range r.Verdicts {
+		if v.Current && v.Shipped && !v.Passed {
+			return v.Verdict
+		}
+	}
+	return r.Status
+}
+
 func later(a, b browse.Run) bool {
 	ta, tb := takenAt(a.RunID), takenAt(b.RunID)
 	if ta != tb {
@@ -120,7 +131,7 @@ func newHomeView(dir string, openRun, openScenario func(string)) *homeView {
 		func(i widget.ListItemID, o fyne.CanvasObject) {
 			r := v.summary.Attention[i]
 			c := o.(*fyne.Container)
-			c.Objects[0].(*fyne.Container).Objects[0].(*pill).Set(outcomeOf(r).String(), pillBad)
+			c.Objects[0].(*fyne.Container).Objects[0].(*pill).Set(attentionWord(r), pillBad)
 			c.Objects[1].(*widget.Label).SetText(r.RunID)
 		},
 	)
@@ -173,7 +184,7 @@ func newHomeView(dir string, openRun, openScenario func(string)) *homeView {
 			container.NewBorder(scen, nil, nil, nil, v.scenarioList),
 		),
 	)
-	v.board.Objects[0].(*container.Split).Offset = 0.4
+	v.board.Objects[0].(*container.Split).Offset = 0.46
 
 	v.message = widget.NewLabel("")
 	v.message.Wrapping = fyne.TextWrapWord

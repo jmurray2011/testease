@@ -87,3 +87,17 @@ func TestAScenarioFromHomeListsOnlyItsRuns(t *testing.T) {
 		t.Errorf("scenario %q", s.runs.scenario.Selected)
 	}
 }
+
+// Choosing "every scenario" forgets the scenario rather than remembering the
+// words.
+func TestChoosingAnyForgetsTheChoice(t *testing.T) {
+	test.NewTempApp(t)
+	runs := t.TempDir()
+	installCheck(t, runs, "install-check-20261123T171533Z")
+	v := newRunsView(runs, func(string) {})
+	v.scenario.SetSelected("install-check")
+	v.scenario.SetSelected(anyScenario)
+	if got := fyne.CurrentApp().Preferences().String(prefRunsScenario); got != "" {
+		t.Errorf("remembered %q", got)
+	}
+}

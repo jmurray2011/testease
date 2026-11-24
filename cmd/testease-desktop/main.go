@@ -132,7 +132,7 @@ func newShell(w fyne.Window, dir, from string, remember func(string)) *shell {
 	life.SetOnEnteredForeground(func() { s.background = false })
 
 	name := widget.NewLabelWithStyle("testease", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-	logo := canvas.NewImageFromResource(appIcon)
+	logo := canvas.NewImageFromResource(logoIcon)
 	logo.FillMode = canvas.ImageFillContain
 	logo.SetMinSize(fyne.NewSize(22, 22))
 	nav := container.NewVBox(container.NewHBox(container.NewPadded(logo), name))

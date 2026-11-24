@@ -3,8 +3,6 @@ package hyperv
 import (
 	"context"
 	"io"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -12,33 +10,6 @@ import (
 	dockerbackend "github.com/jmurray2011/testease/internal/backend/docker"
 	"github.com/jmurray2011/testease/internal/target"
 )
-
-// slowCopyDocker is a docker whose `cp` never returns inside the bound, so the
-// readings a finished cell holds cannot be taken out of it.
-func slowCopyDocker(t *testing.T) string {
-	t.Helper()
-
-	path := filepath.Join(t.TempDir(), "docker")
-	// Slow ONLY on the copy that takes readings OUT of the container. Staging
-	// the probe IN is not cleanup and is not bounded, so a fake that stalled
-	// both would be testing the wrong wait.
-	//
-	// `exec sleep`, not `sleep`: CommandContext kills the direct child, and a
-	// bash that forked would leave the sleep holding the output pipes, so Run
-	// would wait out the whole sleep no matter what the bound said. Real
-	// docker is the direct child.
-	body := `#!/bin/bash
-case "$1" in
-  cp)      case "$2" in cell:*) exec sleep 40;; *) exit 0;; esac;;
-  inspect) printf 'exited 0'; exit 0;;
-esac
-exit 0
-`
-	if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
-		t.Fatalf("write fake docker: %v", err)
-	}
-	return path
-}
 
 // context.WithoutCancel STRIPS THE DEADLINE AS WELL AS THE CANCELLATION.
 //

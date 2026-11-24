@@ -226,6 +226,7 @@ func Run(ctx context.Context, opt Options) Report {
 		for _, c := range platformChecks(ctx, plan, opt.Provision, opt.Platforms) {
 			r.add(c)
 		}
+		r.add(lineEndings(plan))
 		r.add(declaredJudge(plan, opt.ScenarioRoot))
 		r.add(drive(ctx, plan, opt.RunsDir, opt.Docker))
 		r.add(capabilities(plan, opt.Backends))

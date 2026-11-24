@@ -193,7 +193,10 @@ func upgradeCampaign(t *testing.T, runs string, finished bool) string {
 		}
 	}
 	emit("campaign-started", map[string]any{"id": "upgrade-campaign-20261124T010000Z", "name": "upgrade-campaign", "scenario": "upgrade-scenario", "repeat": 2})
-	emit("hook-finished", map[string]any{"hook": "prepare", "exit_code": 0, "duration_ms": 1200})
+	// A hook opens as an activity named for itself and closes as a hook, as
+	// the campaign runner writes it.
+	emit("activity-started", map[string]any{"activity": "prepare", "log": "hooks/prepare.err"})
+	emit("hook-finished", map[string]any{"hook": "prepare", "exit_code": 0, "duration_ms": 1200, "stderr": "hooks/prepare.err"})
 	emit("activity-started", map[string]any{"activity": "doctor", "log": "doctor.log"})
 	emit("activity-finished", map[string]any{"activity": "doctor", "exit_code": 0, "log": "doctor.log"})
 	emit("activity-started", map[string]any{"activity": "run", "iteration": 1, "log": "runs/01-run.log"})
@@ -201,7 +204,8 @@ func upgradeCampaign(t *testing.T, runs string, finished bool) string {
 	emit("activity-started", map[string]any{"activity": "run", "iteration": 2, "log": "runs/02-run.log"})
 	if finished {
 		emit("activity-finished", map[string]any{"activity": "run", "iteration": 2, "exit_code": 0, "run_id": "upgrade-scenario-20261124T011500Z", "log": "runs/02-run.log"})
-		emit("hook-finished", map[string]any{"hook": "cleanup", "exit_code": 0})
+		emit("activity-started", map[string]any{"activity": "cleanup", "log": "hooks/cleanup.err"})
+		emit("hook-finished", map[string]any{"hook": "cleanup", "exit_code": 0, "stderr": "hooks/cleanup.err"})
 		emit("campaign-finished", campaign.Result{
 			ID: "upgrade-campaign-20261124T010000Z", Status: campaign.StatusPassed,
 			Runs: []string{"upgrade-scenario-20261124T010100Z", "upgrade-scenario-20261124T011500Z"}, Cleanup: "passed",
@@ -258,6 +262,9 @@ func TestACampaignIsReadFromItsEvents(t *testing.T) {
 	}
 	if last := c.Activities[3]; last.Finished || last.Iteration != 2 {
 		t.Errorf("last activity = %+v, want run 2 still going", last)
+	}
+	if hook := c.Activities[0]; !hook.Finished || hook.Log != "hooks/prepare.err" {
+		t.Errorf("prepare hook = %+v, want it closed by its hook-finished", hook)
 	}
 	if first := c.Activities[2]; !first.Finished || first.RunID != "upgrade-scenario-20261124T010100Z" {
 		t.Errorf("run 1 = %+v", first)

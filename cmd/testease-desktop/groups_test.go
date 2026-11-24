@@ -196,7 +196,8 @@ func upgradeCampaign(t *testing.T, runs string, finished bool) string {
 		}
 	}
 	emit("campaign-started", map[string]any{"id": upgradeID, "name": "upgrade-campaign", "scenario": "upgrade-scenario", "repeat": 2})
-	emit("hook-finished", map[string]any{"hook": "prepare", "exit_code": 0})
+	emit("activity-started", map[string]any{"activity": "prepare", "log": "hooks/prepare.err"})
+	emit("hook-finished", map[string]any{"hook": "prepare", "exit_code": 0, "stderr": "hooks/prepare.err"})
 	emit("activity-started", map[string]any{"activity": "doctor", "log": "doctor.log"})
 	emit("activity-finished", map[string]any{"activity": "doctor", "exit_code": 3, "log": "doctor.log"})
 	emit("activity-started", map[string]any{"activity": "run", "iteration": 1, "log": "runs/01-run.log"})
@@ -204,7 +205,8 @@ func upgradeCampaign(t *testing.T, runs string, finished bool) string {
 	emit("activity-started", map[string]any{"activity": "run", "iteration": 2, "log": "../../elsewhere.log"})
 	if finished {
 		emit("activity-finished", map[string]any{"activity": "run", "iteration": 2, "exit_code": 0, "run_id": "upgrade-scenario-20261124T011500Z"})
-		emit("hook-finished", map[string]any{"hook": "cleanup", "exit_code": 0})
+		emit("activity-started", map[string]any{"activity": "cleanup", "log": "hooks/cleanup.err"})
+		emit("hook-finished", map[string]any{"hook": "cleanup", "exit_code": 0, "stderr": "hooks/cleanup.err"})
 		emit("campaign-finished", campaign.Result{
 			ID: upgradeID, Status: campaign.StatusPassed,
 			Runs: []string{"upgrade-scenario-20261124T010100Z", "upgrade-scenario-20261124T011500Z"}, Cleanup: "passed",

@@ -205,3 +205,31 @@ func TestALongRecordDoesNotWidenTheWindow(t *testing.T) {
 		t.Errorf("the record asks for a window %.0f wide, want it to fit a 1000-wide screen", got)
 	}
 }
+
+// A matrix run measured in its cells. Its record lists them, and picking one
+// opens that cell's own record.
+func TestAMatrixRecordOpensOnItsCells(t *testing.T) {
+	test.NewTempApp(t)
+
+	runs := t.TempDir()
+	dir := recorded(t, runs, "docs-compat-20261106T001452Z", func(w *record.Writer) {
+		emit(t, w, record.KindRunStarted, 0, record.RunStarted{RunID: "docs-compat-20261106T001452Z", Scenario: record.ScenarioRef{Name: "docs-compat"}})
+		emit(t, w, record.KindCellStarted, 0, record.CellStarted{Key: "7.2.6+1.0.10"})
+		emit(t, w, record.KindCellFinished, 0, record.CellFinished{Key: "7.2.6+1.0.10", Status: record.StatusMeasured})
+		emit(t, w, record.KindRunFinished, 0, record.RunFinished{Status: record.StatusMeasured})
+	})
+
+	v, err := newDetailView(dir, func() {})
+	if err != nil {
+		t.Fatalf("newDetailView: %v", err)
+	}
+	if !strings.Contains(v.stepTitle.Text, "1 cell") {
+		t.Errorf("title = %q, want it to say the steps are in its cell", v.stepTitle.Text)
+	}
+	var opened string
+	v.onOpenCell = func(d string) { opened = d }
+	v.cells.Select(0)
+	if want := filepath.Join(dir, record.CellsDir, "7.2.6+1.0.10"); opened != want {
+		t.Errorf("opened %q, want %q", opened, want)
+	}
+}

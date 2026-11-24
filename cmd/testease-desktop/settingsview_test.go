@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"fyne.io/fyne/v2/test"
+	"fyne.io/fyne/v2/widget"
 
 	"github.com/jmurray2011/testease/internal/environment"
 )
@@ -59,5 +60,18 @@ func TestAVariableThatChangesWhatIsMeasuredIsMarkedWhenItIsSet(t *testing.T) {
 	}
 	if _, kind, _ := v.cell(settingsRow(t, v, "TESTEASE_DOCKER_CONTEXT"), ecolUse); kind != pillBad {
 		t.Error("a measurement-changing variable left set is not marked")
+	}
+}
+
+// Settings is read, not picked from: nothing on it can be selected.
+func TestTheEnvironmentListHasNothingToSelect(t *testing.T) {
+	test.NewTempApp(t)
+
+	v := newSettingsView("", "", func(string) string { return "" })
+	if _, ok := any(v.list).(interface{ Select(widget.TableCellID) }); ok {
+		t.Error("the environment is listed in a selectable table")
+	}
+	if got := len(v.list.Objects); got != len(environment.Vars())+1 {
+		t.Errorf("list has %d rows, want a header and one per variable", got)
 	}
 }

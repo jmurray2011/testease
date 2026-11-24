@@ -340,3 +340,56 @@ func TestACampaignKeepsUpAsItRuns(t *testing.T) {
 		t.Errorf("selected = %d, want the doctor still picked", v.selected)
 	}
 }
+
+func TestCountsArePluralisedAsWords(t *testing.T) {
+	t.Parallel()
+
+	for n, want := range map[int]string{0: "0 batches", 1: "1 batch", 2: "2 batches"} {
+		if got := plural(n, "batch"); got != want {
+			t.Errorf("plural(%d, batch) = %q, want %q", n, got, want)
+		}
+	}
+	if got := plural(2, "campaign"); got != "2 campaigns" {
+		t.Errorf("plural(2, campaign) = %q", got)
+	}
+}
+
+// Every id carries UTC by contract, so a time shown beside one is UTC too;
+// otherwise one campaign reads as starting on two different dates.
+func TestACampaignsStartIsShownInTheTimeItsIDCarries(t *testing.T) {
+	test.NewTempApp(t)
+
+	runs := t.TempDir()
+	upgradeCampaign(t, runs, false)
+	v := newCampaignsView(runs, func(browse.Campaign) {})
+	want := v.all[0].Started.UTC().Format("2006-01-02 15:04") + " UTC"
+	if got := v.cellText(0, ccolStarted); got != want {
+		t.Errorf("started = %q, want %q", got, want)
+	}
+}
+
+// A campaign with no cleanup hook says so in words that fit its column.
+func TestACampaignWithNoCleanupHookSaysSoPlainly(t *testing.T) {
+	test.NewTempApp(t)
+
+	runs := t.TempDir()
+	dir := filepath.Join(runs, "campaigns", "docs-20261106T010314Z")
+	w, err := campaign.OpenRecord(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Emit("campaign-started", map[string]any{"id": "docs-20261106T010314Z", "name": "docs", "repeat": 1}); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Emit("campaign-finished", campaign.Result{ID: "docs-20261106T010314Z", Status: campaign.StatusInterrupted, Cleanup: "not-configured"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	v := newCampaignsView(runs, func(browse.Campaign) {})
+	if got := v.cellText(0, ccolNow); got != "no cleanup hook" {
+		t.Errorf("now = %q", got)
+	}
+}

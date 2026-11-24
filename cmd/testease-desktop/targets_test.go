@@ -121,7 +121,7 @@ func TestRemovingKeptTargetsShowsWhatReapWouldRemoveThenAsks(t *testing.T) {
 	test.NewTempApp(t)
 
 	cli := &fakeCLI{answers: map[string]string{
-		"reap --force": reapForceJSON,
+		"json --force": reapForceJSON,
 		"reap":         reapPreviewJSON,
 		"targets":      standingJSON,
 	}}
@@ -199,5 +199,130 @@ func TestReloadingLetsGoOfThePickedTarget(t *testing.T) {
 	}
 	if !v.copy.Disabled() || !v.openRec.Disabled() {
 		t.Error("Copy or Open run still enabled with nothing picked")
+	}
+}
+
+const ec2PreviewJSON = `{
+  "targets": [
+    {"kind": "ec2-instance", "fate": "orphaned", "where": "ec2", "name": "i-0abc", "run": "fleet-20261124T010000Z",
+     "created": "2026-11-24T01:00:00Z", "reason": "the record released it and no run holds it"},
+    {"kind": "ec2-instance", "fate": "unprovable", "where": "ec2", "name": "i-0def",
+     "reason": "resource lacks a complete testease identity"}
+  ],
+  "removable": 1, "removed": [], "notices": []
+}`
+
+func ec2Targets(t *testing.T, cli *fakeCLI) *targetsView {
+	t.Helper()
+	v := newFakeTargets(t, cli)
+	v.profile.SetText("lab")
+	v.region.SetText("us-east-2")
+	v.choose(placeEC2)
+	return v
+}
+
+// EC2 and ECS targets are listed by reap's own look, which says of each
+// whether it may be removed and why; nothing is removed by looking.
+func TestEC2TargetsAreListedByReapsLook(t *testing.T) {
+	test.NewTempApp(t)
+
+	cli := &fakeCLI{answers: map[string]string{"targets": standingJSON, "--platform ec2": ec2PreviewJSON}}
+	v := ec2Targets(t, cli)
+
+	last := cli.asked[len(cli.asked)-1]
+	want := []string{"--runs-dir", "/srv/runs", "reap", "--platform", "ec2", "--aws-profile", "lab", "--aws-region", "us-east-2", "--output", "json"}
+	if !slices.Equal(last, want) {
+		t.Errorf("asked %q, want %q", last, want)
+	}
+	if len(v.all) != 2 || v.cellText(0, tcolTarget) != "i-0abc" || v.cellText(0, tcolHost) != "ec2-instance" {
+		t.Fatalf("listed %+v", v.all)
+	}
+	if got := v.cellText(1, tcolFate); got != "owner unknown" {
+		t.Errorf("fate = %q", got)
+	}
+	v.pick(1)
+	if !strings.Contains(v.shell.Text, "lacks a complete testease identity") || !v.copy.Disabled() {
+		t.Errorf("picked shows %q, copy disabled %v; want reap's reason and nothing to copy", v.shell.Text, v.copy.Disabled())
+	}
+}
+
+func TestRemovingEC2TargetsAsksThenForcesWithTheSameAccount(t *testing.T) {
+	test.NewTempApp(t)
+
+	cli := &fakeCLI{answers: map[string]string{
+		"targets": standingJSON, "--platform ec2": ec2PreviewJSON,
+		"--platform ec2 --aws-profile lab --aws-region us-east-2 --output json --force": `{"targets": [], "removable": 1, "removed": ["i-0abc"], "notices": []}`,
+	}}
+	v := ec2Targets(t, cli)
+	var question string
+	v.ask = func(_, msg string, yes func()) { question = msg; yes() }
+	v.removeKept()
+
+	if !strings.Contains(question, "i-0abc") || strings.Contains(question, "i-0def") {
+		t.Errorf("question = %q, want only the instance reap may remove", question)
+	}
+	force := cli.asked[len(cli.asked)-2]
+	if !slices.Contains(force, "--force") || !slices.Contains(force, "lab") || !slices.Contains(force, "ec2") {
+		t.Errorf("forced with %q", force)
+	}
+	if !strings.Contains(v.message.Text, "Removed 1: i-0abc") {
+		t.Errorf("message = %q", v.message.Text)
+	}
+}
+
+// Without an account to look in, nothing is asked: reap would refuse anyway.
+func TestEC2WithoutAnAccountSaysWhatItNeeds(t *testing.T) {
+	test.NewTempApp(t)
+
+	cli := &fakeCLI{answers: map[string]string{"targets": standingJSON}}
+	v := newFakeTargets(t, cli)
+	before := len(cli.asked)
+	v.profile.SetText("")
+	v.region.SetText("")
+	v.choose(placeECS)
+	if len(cli.asked) != before {
+		t.Errorf("asked %q without an account", cli.asked[before:])
+	}
+	if !strings.Contains(v.message.Text, "AWS profile") || !strings.Contains(v.message.Text, "cluster") {
+		t.Errorf("message = %q", v.message.Text)
+	}
+	if len(v.all) != 0 {
+		t.Errorf("still listing %d docker targets under ECS", len(v.all))
+	}
+}
+
+func TestEveryDockerContextIsAskedOfBothTargetsAndReap(t *testing.T) {
+	test.NewTempApp(t)
+
+	cli := &fakeCLI{answers: map[string]string{"targets": standingJSON, "reap": reapPreviewJSON}}
+	v := newFakeTargets(t, cli)
+	v.choose(placeDockerAll)
+	v.ask = func(string, string, func()) {}
+	v.removeKept()
+	for _, verb := range []string{"targets", "reap"} {
+		found := false
+		for _, a := range cli.asked {
+			if slices.Contains(a, verb) && slices.Contains(a, "--all-contexts") {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("%s was not asked about every context: %q", verb, cli.asked)
+		}
+	}
+}
+
+func TestECSAsksForItsCluster(t *testing.T) {
+	test.NewTempApp(t)
+
+	cli := &fakeCLI{answers: map[string]string{"targets": standingJSON}}
+	v := newFakeTargets(t, cli)
+	v.profile.SetText("lab")
+	v.region.SetText("us-east-2")
+	v.cluster.SetText("fleet")
+	v.choose(placeECS)
+	last := cli.asked[len(cli.asked)-1]
+	if !slices.Contains(last, "ecs") || !slices.Contains(last, "--ecs-cluster") || !slices.Contains(last, "fleet") {
+		t.Errorf("asked %q", last)
 	}
 }

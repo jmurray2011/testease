@@ -83,7 +83,17 @@ func (i *recordingInvoker) Invoke(_ context.Context, stdout, _ io.Writer, args .
 	i.started = append(i.started, scenario)
 	i.args[scenario] = slices.Clone(args)
 	i.mu.Unlock()
-	time.Sleep(25 * time.Millisecond)
+	// Stay live until a second child has been seen live at the same time,
+	// with a bound. A fixed sleep let a loaded machine finish the first child
+	// before starting the second, and read as a batch that never overlapped.
+	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+		i.mu.Lock()
+		overlapped := i.most >= 2
+		i.mu.Unlock()
+		if overlapped {
+			break
+		}
+	}
 	_, _ = fmt.Fprintf(stdout, `{"run_id":"%s-run"}`, scenario)
 	i.mu.Lock()
 	i.active--

@@ -123,7 +123,7 @@ func newTargetsView(runsDir string, call cliCall, openRun func(string)) *targets
 	v.table = listing(func() int { return len(v.all) }, targetTitles, targetWidths, tcolTarget, v.cell, nil)
 	v.table.OnSelected = func(id widget.TableCellID) { v.pick(id.Row) }
 
-	v.shell = widget.NewLabelWithStyle("Pick a target to see how to get onto it.", fyne.TextAlignLeading, fyne.TextStyle{Monospace: true})
+	v.shell = widget.NewLabelWithStyle(pickHint, fyne.TextAlignLeading, fyne.TextStyle{Monospace: true})
 	v.shell.Selectable = true
 	v.shell.Truncation = fyne.TextTruncateEllipsis
 	v.copy = widget.NewButtonWithIcon("Copy", theme.ContentCopyIcon(), func() {
@@ -145,11 +145,13 @@ func newTargetsView(runsDir string, call cliCall, openRun func(string)) *targets
 	v.content = container.NewBorder(
 		container.NewVBox(screenTitle("Targets", v.count, v.remove, refresh), widget.NewSeparator(), v.message),
 		container.NewVBox(widget.NewSeparator(), container.NewPadded(picked),
-			note("A run that did not finish cleanly keeps its targets, because a half-changed box answers questions the record does not. Remove kept targets runs testease reap, which removes only targets whose run is gone, and asks first.")),
+			note("A run that did not finish cleanly keeps its targets, because a half-changed box answers questions the record does not. Remove kept targets runs testease reap, which removes only targets whose run is gone, along with the networks and secret workspaces those runs left, and asks first.")),
 		nil, nil, v.table,
 	)
 	return v
 }
+
+const pickHint = "Pick a target to see how to get onto it."
 
 func (v *targetsView) base() []string { return []string{"--runs-dir", v.runsDir} }
 
@@ -181,6 +183,9 @@ func (v *targetsView) reload() {
 			}
 			v.count.SetText(plural(len(v.all), "target"))
 			v.picked = -1
+			v.shell.SetText(pickHint)
+			v.copy.Disable()
+			v.openRec.Disable()
 			v.table.UnselectAll()
 			v.table.Refresh()
 		})
@@ -268,6 +273,7 @@ func (v *targetsView) removeKept() {
 			}
 			msg := fmt.Sprintf("testease reap would remove %s:\n\n%s\n\nRemove %s?",
 				plural(len(lines), "item"), strings.Join(lines, "\n"), map[bool]string{true: "it", false: "them"}[len(lines) == 1])
+			v.showNotes()
 			v.ask("Remove kept targets?", msg, v.reap)
 		})
 	})

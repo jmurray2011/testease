@@ -168,3 +168,36 @@ func TestNothingRemovableIsSaidWithoutAsking(t *testing.T) {
 		t.Errorf("message = %q", v.message.Text)
 	}
 }
+
+// Saying no puts the screen back as it was, not stuck on the question.
+func TestSayingNoToRemovingLeavesNoQuestionShowing(t *testing.T) {
+	test.NewTempApp(t)
+
+	cli := &fakeCLI{answers: map[string]string{"reap": reapPreviewJSON, "targets": standingJSON}}
+	v := newFakeTargets(t, cli)
+	v.ask = func(string, string, func()) {}
+
+	v.removeKept()
+	if strings.Contains(v.message.Text, "Asking") {
+		t.Errorf("message = %q after no", v.message.Text)
+	}
+}
+
+// Once the list is asked again, a target picked before may be gone, so the
+// pick is let go with it.
+func TestReloadingLetsGoOfThePickedTarget(t *testing.T) {
+	test.NewTempApp(t)
+
+	cli := &fakeCLI{answers: map[string]string{"targets": standingJSON}}
+	v := newFakeTargets(t, cli)
+	v.pick(0)
+	cli.answers["targets"] = `{"targets": [], "notices": []}`
+	v.reload()
+
+	if strings.Contains(v.shell.Text, "docker exec") {
+		t.Errorf("shell = %q after the target went", v.shell.Text)
+	}
+	if !v.copy.Disabled() || !v.openRec.Disabled() {
+		t.Error("Copy or Open run still enabled with nothing picked")
+	}
+}

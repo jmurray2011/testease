@@ -127,7 +127,7 @@ func (c Client) Drive(ctx context.Context, spec DriveSpec, opt target.RunOpts) (
 			return result, ctx.Err()
 		}
 
-		rc, reported := codeOf(err)
+		rc, reported := codeOf(err, ctx.Err() != nil)
 		if !reported || rc == 125 || rc == 126 || rc == 127 {
 			// docker run's own failure - the image is not there, the daemon
 			// refused, the entrypoint could not start. The suite never ran, so
@@ -260,7 +260,7 @@ func (c Client) DriveRemote(ctx context.Context, spec DriveSpec, opt target.RunO
 			return result, runCtx.Err()
 		}
 
-		rc, reported := codeOf(runErr)
+		rc, reported := codeOf(runErr, runCtx.Err() != nil)
 		if !reported || rc == 125 || rc == 126 || rc == 127 {
 			result.RC = -1
 			return result, fmt.Errorf("docker could not start the remote drive container: %w", runErr)

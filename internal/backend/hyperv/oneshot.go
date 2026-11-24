@@ -201,7 +201,7 @@ func (o OneShot) Run(ctx context.Context, script []byte, args []string, opt targ
 		// discarded the no-curl-on-the-appliance reading this lab has already
 		// met once - and the early return took that cell's fd3 facts and
 		// declared artifacts with it.
-		if _, reported := docker.CodeOf(err); !reported {
+		if _, reported := docker.CodeOf(err, runCtx.Err() != nil); !reported {
 			result.RC = -1
 			return result, fmt.Errorf("start one-shot cell %s: %w", o.Name, err)
 		}

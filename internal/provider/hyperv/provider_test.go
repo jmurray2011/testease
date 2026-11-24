@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jmurray2011/testease/internal/backend/private"
 	"github.com/jmurray2011/testease/internal/target"
 )
 
@@ -76,8 +77,8 @@ func TestACarryIsOwnedAndStagedBeforeAOneShotStarts(t *testing.T) {
 	if string(got) != "exact dump bytes" {
 		t.Errorf("owned carry = %q", got)
 	}
-	if info, statErr := os.Stat(staged[1].Local); statErr != nil || info.Mode().Perm() != 0o600 {
-		t.Errorf("owned carry mode = %v, %v; want runner scratch to remain 0600", info, statErr)
+	if err := private.Verify(staged[1].Local, 0o600); err != nil {
+		t.Errorf("owned carry is not private: %v; want runner scratch to remain 0600", err)
 	}
 
 	if err := p.Release(context.Background(), c, false); err != nil {

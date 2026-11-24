@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/jmurray2011/testease/internal/backend/private"
 	"github.com/jmurray2011/testease/internal/scenario"
 )
 
@@ -49,6 +50,13 @@ func TestAFileIsVerifiedStagedAndBoundByLogicalName(t *testing.T) {
 	}
 	if string(staged) != string(body) {
 		t.Errorf("staged bytes = %q", staged)
+	}
+	// The staged copy is the runner's alone, on any platform.
+	if err := private.Verify(filepath.Dir(got.StagedPath), 0o700); err != nil {
+		t.Errorf("input cache: %v", err)
+	}
+	if err := private.Verify(got.StagedPath, 0o400); err != nil {
+		t.Errorf("staged input: %v", err)
 	}
 
 	plan := &scenario.Plan{

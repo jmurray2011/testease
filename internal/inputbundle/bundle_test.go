@@ -142,13 +142,16 @@ func TestRelativeRunsDirectoryStagesAnAbsoluteMountPath(t *testing.T) {
 	)), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cwd, err := os.Getwd()
+	// Under the working directory rather than relative to t.TempDir: on a
+	// machine whose temporary directory is on another drive, as GitHub's
+	// Windows runners have it, there is no relative path between the two.
+	relativeRuns, err := os.MkdirTemp(".", ".testease-test-runs-")
 	if err != nil {
 		t.Fatal(err)
 	}
-	relativeRuns, err := filepath.Rel(cwd, filepath.Join(dir, "runs"))
-	if err != nil {
-		t.Fatal(err)
+	t.Cleanup(func() { _ = os.RemoveAll(relativeRuns) })
+	if filepath.IsAbs(relativeRuns) {
+		t.Fatalf("runs directory %q is not relative, so this tests nothing", relativeRuns)
 	}
 	resolved, err := LoadAndStage(descriptor, relativeRuns, map[string]scenario.Input{
 		"package": {Kind: "file"},

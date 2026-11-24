@@ -228,6 +228,7 @@ func (s *shell) showSettings() {
 	s.highlight(sectionSettings)
 	v := newSettingsView(s.dir, s.from, os.Getenv)
 	v.addTools(s.tools)
+	v.showVersions(thisVersion(), execCall(s.tools.testease))
 	s.show(v, v.content)
 }
 

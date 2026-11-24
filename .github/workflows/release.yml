@@ -45,19 +45,20 @@ jobs:
       - if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev
 
-      # The CLI is stamped as make build stamps it: a record names the binary
-      # that took the measurement.
+      # Both are stamped as make build stamps the CLI: a record names the
+      # binary that took the measurement, and the app shows both versions.
       - name: Build
         run: |
           version="$(git describe --tags --always --dirty)"
           commit="$(git rev-parse HEAD)"
           out="dist/testease-${version}-${{ matrix.platform }}"
           mkdir -p "$out"
-          CGO_ENABLED=0 go build -trimpath -ldflags "-X main.version=${version} -X main.commit=${commit}" \
+          stamp="-X main.version=${version} -X main.commit=${commit}"
+          CGO_ENABLED=0 go build -trimpath -ldflags "$stamp" \
             -o "$out/testease${{ matrix.exe }}" ./cmd/testease
           gui=""
           if [ "${{ runner.os }}" = "Windows" ]; then gui="-H windowsgui"; fi
-          (cd cmd/testease-desktop && go build -trimpath -ldflags "$gui" -o "../../$out/testease-desktop${{ matrix.exe }}" .)
+          (cd cmd/testease-desktop && go build -trimpath -ldflags "$stamp $gui" -o "../../$out/testease-desktop${{ matrix.exe }}" .)
           cp LICENSE* README* "$out/" 2>/dev/null || true
           echo "OUT=$out" >> "$GITHUB_ENV"
           echo "NAME=$(basename "$out")" >> "$GITHUB_ENV"

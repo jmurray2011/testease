@@ -32,10 +32,17 @@ type settingsView struct {
 	toolsBox *fyne.Container
 	list     *fyne.Container
 	content  fyne.CanvasObject
+
+	// appVersion and binaryVersion name the two builds; mismatch shows when
+	// both are releases and not the same one.
+	appVersion, binaryVersion *widget.Label
+	mismatch                  fyne.CanvasObject
+	async                     func(func())
+	onUI                      func(func())
 }
 
 func newSettingsView(dir, from string, getenv func(string) string) *settingsView {
-	v := &settingsView{rows: environment.Current(getenv)}
+	v := &settingsView{rows: environment.Current(getenv), async: func(f func()) { go f() }, onUI: fyne.Do}
 
 	v.where = widget.NewLabelWithStyle("", fyne.TextAlignLeading, fyne.TextStyle{Monospace: true})
 	v.where.Selectable = true
@@ -147,18 +154,29 @@ func (v *settingsView) cellText(row, col int) string {
 // addTools shows where scenarios are and which testease runs are started
 // with.
 func (v *settingsView) addTools(t tools) {
-	line := func(heading, value, from string) {
+	mono := func(text string) *widget.Label {
+		l := widget.NewLabelWithStyle(text, fyne.TextAlignLeading, fyne.TextStyle{Monospace: true})
+		l.Selectable = true
+		l.Wrapping = fyne.TextWrapBreak
+		return l
+	}
+	line := func(heading, value, from string, more ...fyne.CanvasObject) {
 		h := widget.NewLabelWithStyle(heading, fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 		text := "not found"
 		if value != "" {
 			text = value + " (" + from + ")"
 		}
-		l := widget.NewLabelWithStyle(text, fyne.TextAlignLeading, fyne.TextStyle{Monospace: true})
-		l.Selectable = true
-		l.Wrapping = fyne.TextWrapBreak
-		v.toolsBox.Add(container.NewPadded(container.NewVBox(h, l)))
+		v.toolsBox.Add(container.NewPadded(container.NewVBox(append([]fyne.CanvasObject{h, mono(text)}, more...)...)))
 	}
+	v.appVersion = mono("")
+	v.binaryVersion = mono("")
+	mismatch := note("This app and the testease binary are from different releases. Runs are started with the binary, and a record names the binary's version.")
+	mismatch.Importance = widget.WarningImportance
+	mismatch.Hide()
+	v.mismatch = mismatch
+	h := widget.NewLabelWithStyle("This app", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	v.toolsBox.Add(container.NewPadded(container.NewVBox(h, v.appVersion)))
 	line("Scenario root", t.scenarioRoot, t.scenarioFrom)
-	line("testease binary", t.testease, t.testeaseFrom)
+	line("testease binary", t.testease, t.testeaseFrom, v.binaryVersion, v.mismatch)
 	v.toolsBox.Add(container.NewPadded(note("The scenario root is taken like the runs directory: --scenario-root, then TESTEASE_SCENARIO_ROOT, then the folder last chosen here. The binary is --testease, then the testease beside this app, then the one on PATH.")))
 }

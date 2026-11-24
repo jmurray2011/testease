@@ -77,4 +77,4 @@ desktop-validate: tools
 	cd $(DESKTOP) && $(GOVULNCHECK) ./...
 
 desktop:
-	cd $(DESKTOP) && go build -trimpath -o $(CURDIR)/testease-desktop .
+	cd $(DESKTOP) && go build -trimpath -ldflags "$(STAMP)" -o $(CURDIR)/testease-desktop .

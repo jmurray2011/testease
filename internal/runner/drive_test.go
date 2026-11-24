@@ -223,13 +223,20 @@ func relativePlan(t *testing.T, manifest string) *scenario.Plan {
 	t.Helper()
 
 	p := plan(t, manifest)
-	cwd, err := os.Getwd()
+	// A copy under the working directory rather than a path relative to
+	// t.TempDir: on a machine whose temporary directory is on another drive,
+	// as GitHub's Windows runners have it, there is no relative path between
+	// the two.
+	rel, err := os.MkdirTemp(".", ".testease-test-scenario-")
 	if err != nil {
-		t.Fatalf("Getwd: %v", err)
+		t.Fatalf("MkdirTemp: %v", err)
 	}
-	rel, err := filepath.Rel(cwd, p.Dir)
-	if err != nil {
-		t.Fatalf("Rel: %v", err)
+	t.Cleanup(func() { _ = os.RemoveAll(rel) })
+	if err := os.CopyFS(rel, os.DirFS(p.Dir)); err != nil {
+		t.Fatalf("copy the scenario: %v", err)
+	}
+	if filepath.IsAbs(rel) {
+		t.Fatalf("scenario directory %q is not relative, so this tests nothing", rel)
 	}
 	p.Dir = rel
 	return p

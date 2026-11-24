@@ -1,0 +1,222 @@
+package main
+
+import (
+	"errors"
+	"fmt"
+	"os"
+	"sort"
+	"strings"
+
+	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/layout"
+	"fyne.io/fyne/v2/theme"
+	"fyne.io/fyne/v2/widget"
+
+	"github.com/jmurray2011/testease/internal/browse"
+)
+
+// The Runs screen's columns.
+const (
+	colRun = iota
+	colScenario
+	colMeasured
+	colStatus
+	colVerdict
+	colFate
+	columns
+)
+
+var (
+	columnTitles = [columns]string{"Run", "Scenario", "Measured", "Status", "Latest verdict", "Target fate"}
+	columnWidths = [columns]float32{370, 130, 85, 105, 250, 200}
+)
+
+// runsView lists the records under a runs directory, newest first.
+type runsView struct {
+	dir    string
+	onOpen func(dir string)
+
+	all   []browse.Run
+	shown []browse.Run
+	// status is read once per reload: for a record that has not closed it
+	// asks the lock, which is not something to do on every repaint.
+	status map[string]string
+
+	filter  *widget.Entry
+	count   *widget.Label
+	message *widget.Label
+	table   *widget.Table
+	content fyne.CanvasObject
+}
+
+func newRunsView(dir string, onOpen func(dir string)) *runsView {
+	v := &runsView{dir: dir, onOpen: onOpen}
+
+	title := widget.NewLabelWithStyle("Runs", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	title.SizeName = theme.SizeNameSubHeadingText
+	v.count = widget.NewLabel("")
+	v.count.Importance = widget.LowImportance
+
+	v.filter = widget.NewEntry()
+	v.filter.SetPlaceHolder("Filter by run, scenario or status")
+	v.filter.OnChanged = func(string) { v.apply() }
+	refresh := widget.NewButtonWithIcon("Refresh", theme.ViewRefreshIcon(), v.reload)
+
+	v.message = widget.NewLabel("")
+	v.message.Wrapping = fyne.TextWrapWord
+	v.message.Hide()
+
+	v.table = widget.NewTableWithHeaders(
+		func() (int, int) { return len(v.shown), columns },
+		func() fyne.CanvasObject {
+			label := widget.NewLabel("")
+			label.Truncation = fyne.TextTruncateEllipsis
+			return container.NewStack(label, container.NewHBox(newPill("", pillNeutral)))
+		},
+		func(id widget.TableCellID, cell fyne.CanvasObject) {
+			stack := cell.(*fyne.Container)
+			label := stack.Objects[0].(*widget.Label)
+			box := stack.Objects[1].(*fyne.Container)
+			p := box.Objects[0].(*pill)
+			text, kind, isPill := v.cell(id.Row, id.Col)
+			if isPill {
+				label.Hide()
+				box.Show()
+				p.Set(text, kind)
+				return
+			}
+			box.Hide()
+			label.Show()
+			label.TextStyle = fyne.TextStyle{Monospace: id.Col == colRun}
+			label.SetText(text)
+		},
+	)
+	v.table.ShowHeaderColumn = false
+	v.table.CreateHeader = func() fyne.CanvasObject {
+		l := widget.NewLabel("")
+		l.Importance = widget.LowImportance
+		return l
+	}
+	v.table.UpdateHeader = func(id widget.TableCellID, o fyne.CanvasObject) {
+		if id.Col >= 0 && id.Col < columns {
+			o.(*widget.Label).SetText(columnTitles[id.Col])
+		}
+	}
+	for i, w := range columnWidths {
+		v.table.SetColumnWidth(i, w)
+	}
+	v.table.OnSelected = func(id widget.TableCellID) {
+		v.table.UnselectAll()
+		if id.Row >= 0 && id.Row < len(v.shown) {
+			v.onOpen(v.shown[id.Row].Dir)
+		}
+	}
+
+	filterBox := container.NewGridWrap(fyne.NewSize(300, v.filter.MinSize().Height), v.filter)
+	header := container.NewHBox(title, v.count, layout.NewSpacer(), filterBox, refresh)
+	footer := widget.NewLabel("Status is what the run measured. Verdicts come only from judges; a run with no verdict has not been judged yet.")
+	footer.Importance = widget.LowImportance
+	footer.Wrapping = fyne.TextWrapWord
+
+	v.content = container.NewBorder(
+		container.NewVBox(container.NewPadded(header), widget.NewSeparator(), v.message),
+		container.NewVBox(widget.NewSeparator(), footer),
+		nil, nil,
+		v.table,
+	)
+	v.reload()
+	return v
+}
+
+// reload reads the runs directory again.
+func (v *runsView) reload() {
+	runs, err := browse.List(v.dir)
+	switch {
+	case v.dir == "":
+		v.all = nil
+		v.showMessage("Choose the folder your records are written to. testease calls it the runs directory (--runs-dir, TESTEASE_RUNS_DIR).")
+	case errors.Is(err, os.ErrNotExist):
+		v.all = nil
+		v.showMessage("No runs directory at " + v.dir)
+	case err != nil:
+		v.all = nil
+		v.showMessage(fmt.Sprintf("Could not read %s: %v", v.dir, err))
+	default:
+		v.all = runs
+		if len(runs) == 0 {
+			v.showMessage("No records under " + v.dir + " yet.")
+		} else {
+			v.message.Hide()
+		}
+	}
+
+	v.status = make(map[string]string, len(v.all))
+	for _, r := range v.all {
+		v.status[r.Dir] = statusOf(r)
+	}
+	// Newest first, by the timestamp every run id carries.
+	sort.SliceStable(v.all, func(i, j int) bool {
+		a, b := takenAt(v.all[i].RunID), takenAt(v.all[j].RunID)
+		if a != b {
+			return a > b
+		}
+		return v.all[i].RunID < v.all[j].RunID
+	})
+	v.apply()
+}
+
+func (v *runsView) showMessage(text string) {
+	v.message.SetText(text)
+	v.message.Show()
+}
+
+// apply narrows the listing to what the filter matches.
+func (v *runsView) apply() {
+	needle := strings.ToLower(strings.TrimSpace(v.filter.Text))
+	v.shown = v.shown[:0]
+	for _, r := range v.all {
+		if needle == "" ||
+			strings.Contains(strings.ToLower(r.RunID), needle) ||
+			strings.Contains(strings.ToLower(r.Scenario), needle) ||
+			strings.Contains(strings.ToLower(v.status[r.Dir]), needle) {
+			v.shown = append(v.shown, r)
+		}
+	}
+	if needle == "" {
+		v.count.SetText(plural(len(v.all), "record"))
+	} else {
+		v.count.SetText(fmt.Sprintf("%d of %s", len(v.shown), plural(len(v.all), "record")))
+	}
+	v.table.Refresh()
+}
+
+// cell is what one cell of the listing says, and whether it is a pill.
+func (v *runsView) cell(row, col int) (text string, kind pillKind, isPill bool) {
+	if row < 0 || row >= len(v.shown) {
+		return "", pillNeutral, false
+	}
+	r := v.shown[row]
+	switch col {
+	case colRun:
+		return r.RunID, pillNeutral, false
+	case colScenario:
+		return r.Scenario, pillNeutral, false
+	case colMeasured:
+		return measuredText(r), pillNeutral, false
+	case colStatus:
+		s := v.status[r.Dir]
+		return s, statusKind(s), true
+	case colVerdict:
+		text, kind := verdictSummary(r.Verdicts)
+		return text, kind, len(r.Verdicts) > 0
+	case colFate:
+		return fatesText(r.Targets), pillNeutral, false
+	}
+	return "", pillNeutral, false
+}
+
+func (v *runsView) cellText(row, col int) string {
+	text, _, _ := v.cell(row, col)
+	return text
+}

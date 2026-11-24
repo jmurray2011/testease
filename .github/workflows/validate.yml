@@ -34,3 +34,35 @@ jobs:
       - run: go build -trimpath -o testease.exe ./cmd/testease
         env:
           CGO_ENABLED: "0"
+
+  # The desktop app is its own module and needs cgo, so it has its own job on
+  # both platforms it ships for. The CLI's jobs above never touch it.
+  desktop-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: cmd/testease-desktop/go.mod
+          cache: true
+          cache-dependency-path: cmd/testease-desktop/go.sum
+      - run: sudo apt-get update && sudo apt-get install -y libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev
+      - run: make desktop-validate
+      - run: make desktop
+
+  desktop-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: cmd/testease-desktop
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: cmd/testease-desktop/go.mod
+          cache: true
+          cache-dependency-path: cmd/testease-desktop/go.sum
+      - run: gcc --version
+      - run: go vet ./...
+      - run: go test ./...
+      - run: go build -trimpath -ldflags "-H windowsgui" -o testease-desktop.exe .

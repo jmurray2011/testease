@@ -1,5 +1,8 @@
 # Build output
 /testease
+/testease.exe
+/testease-desktop
+/testease-desktop.exe
 /dist/
 /.tools/
 

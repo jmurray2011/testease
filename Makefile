@@ -1,4 +1,4 @@
-.PHONY: validate test-contract tools fmt vet lint test vuln build install
+.PHONY: validate test-contract tools fmt vet lint test vuln build install desktop-validate desktop
 
 # Keep the validation toolchain beside the checkout. A clean clone should not
 # depend on whichever versions happen to be installed globally.
@@ -63,3 +63,18 @@ build:
 # runs directory is in rather than only from this one.
 install:
 	CGO_ENABLED=0 go install -trimpath -ldflags "$(STAMP)" ./cmd/testease
+
+# The desktop app is its own module. It needs cgo, a C compiler and the GL and
+# windowing headers, and neither the CLI nor its gate should: `go test ./...`
+# here never reaches it, and the CLI stays a static CGO-free build.
+DESKTOP := cmd/testease-desktop
+
+desktop-validate: tools
+	cd $(DESKTOP) && $(GOFUMPT) -l -d . && test -z "$$($(GOFUMPT) -l .)"
+	cd $(DESKTOP) && go vet ./...
+	cd $(DESKTOP) && $(GOLANGCI_LINT) run --config $(CURDIR)/.golangci.yml ./...
+	cd $(DESKTOP) && go test -race ./...
+	cd $(DESKTOP) && $(GOVULNCHECK) ./...
+
+desktop:
+	cd $(DESKTOP) && go build -trimpath -o $(CURDIR)/testease-desktop .

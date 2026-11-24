@@ -18,17 +18,18 @@ const (
 
 var (
 	envTitles = []string{"Variable", "Value", "Use", "Sets"}
-	envWidths = []float32{290, 260, 190, 330}
+	envWidths = []float32{280, 230, 190, 420}
 )
 
 // settingsView shows where records are read from and every TESTEASE_*
 // variable this app was started with. It changes none of them: there is no
 // config file, and a value that changes what is measured is not something an
-// app should keep.
+// app should keep. The variables are a plain list, not a table: there is
+// nothing on this screen to pick.
 type settingsView struct {
 	rows    []environment.Setting
 	where   *widget.Label
-	table   *widget.Table
+	list    *fyne.Container
 	content fyne.CanvasObject
 }
 
@@ -48,15 +49,64 @@ func newSettingsView(dir, from string, getenv func(string) string) *settingsView
 		note("Taken from --runs-dir, then TESTEASE_RUNS_DIR, then the folder last chosen here. That folder is the only thing this app remembers."))
 
 	envHeading := widget.NewLabelWithStyle("Environment", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-	v.table = listing(func() int { return len(v.rows) }, envTitles, envWidths, ecolName, v.cell, nil)
 
-	v.content = container.NewBorder(
-		container.NewVBox(screenTitle("Settings", nil), widget.NewSeparator(),
-			container.NewPadded(runs), widget.NewSeparator(), container.NewPadded(envHeading)),
-		container.NewVBox(widget.NewSeparator(), note("These are the values this app was started with. A testease started from another shell reads that shell's environment. Variables marked \"pass as a flag\" change what is measured, recorded or judged, and the record does not say they were set.")),
-		nil, nil, v.table,
+	v.list = container.NewVBox()
+	header := make([]fyne.CanvasObject, len(envTitles))
+	for i, title := range envTitles {
+		l := widget.NewLabel(title)
+		l.Importance = widget.LowImportance
+		header[i] = l
+	}
+	v.list.Add(container.New(&fixedColumns{widths: envWidths}, header...))
+	for r := range v.rows {
+		cells := make([]fyne.CanvasObject, len(envTitles))
+		for c := range envTitles {
+			text, kind, isPill := v.cell(r, c)
+			if isPill {
+				cells[c] = container.NewHBox(newPill(text, kind))
+				continue
+			}
+			l := widget.NewLabel(text)
+			l.Truncation = fyne.TextTruncateEllipsis
+			l.TextStyle = fyne.TextStyle{Monospace: c == ecolName}
+			l.Selectable = c == ecolValue
+			cells[c] = l
+		}
+		v.list.Add(container.New(&fixedColumns{widths: envWidths}, cells...))
+	}
+
+	v.content = container.NewVBox(
+		screenTitle("Settings", nil), widget.NewSeparator(),
+		container.NewPadded(runs), widget.NewSeparator(),
+		container.NewPadded(envHeading), v.list, widget.NewSeparator(),
+		note("These are the values this app was started with. A testease started from another shell reads that shell's environment. Variables marked \"pass as a flag\" change what is measured, recorded or judged, and the record does not say they were set."),
 	)
 	return v
+}
+
+// fixedColumns lays a row's cells out at fixed widths, so the rows line up.
+type fixedColumns struct{ widths []float32 }
+
+func (c *fixedColumns) Layout(objects []fyne.CanvasObject, size fyne.Size) {
+	x := float32(0)
+	for i, o := range objects {
+		w := c.widths[i]
+		if i == len(objects)-1 && size.Width-x > w {
+			w = size.Width - x
+		}
+		o.Move(fyne.NewPos(x, 0))
+		o.Resize(fyne.NewSize(w, size.Height))
+		x += w
+	}
+}
+
+func (c *fixedColumns) MinSize(objects []fyne.CanvasObject) fyne.Size {
+	var w, h float32
+	for i, o := range objects {
+		w += c.widths[i]
+		h = max(h, o.MinSize().Height)
+	}
+	return fyne.NewSize(w, h)
 }
 
 func (v *settingsView) cell(row, col int) (string, pillKind, bool) {

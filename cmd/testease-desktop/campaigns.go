@@ -27,7 +27,7 @@ const (
 
 var (
 	campaignTitles = []string{"Campaign", "Status", "Runs", "Now", "Started"}
-	campaignWidths = []float32{340, 110, 110, 160, 170}
+	campaignWidths = []float32{340, 120, 110, 170, 190}
 )
 
 // campaignsView lists the campaigns under a runs directory, newest first.
@@ -98,7 +98,7 @@ func (v *campaignsView) cell(row, col int) (string, pillKind, bool) {
 		case c.Current != "":
 			return c.Current, pillNeutral, false
 		case c.Cleanup != "":
-			return "cleanup " + c.Cleanup, pillNeutral, false
+			return cleanupText(c.Cleanup), pillNeutral, false
 		default:
 			return "—", pillNeutral, false
 		}
@@ -106,7 +106,8 @@ func (v *campaignsView) cell(row, col int) (string, pillKind, bool) {
 		if c.Started.IsZero() {
 			return "—", pillNeutral, false
 		}
-		return c.Started.Local().Format("2006-01-02 15:04"), pillNeutral, false
+		// UTC, as the id beside it is.
+		return c.Started.UTC().Format("2006-01-02 15:04") + " UTC", pillNeutral, false
 	}
 	return "", pillNeutral, false
 }
@@ -203,7 +204,7 @@ func (v *campaignView) refreshHeader() {
 		parts = append(parts, fmt.Sprintf("%d of %s", len(v.c.Runs), plural(v.c.Repeat, "run")))
 	}
 	if v.c.Cleanup != "" {
-		parts = append(parts, "cleanup "+v.c.Cleanup)
+		parts = append(parts, cleanupText(v.c.Cleanup))
 	}
 	if v.c.Status != campaign.StatusRunning && v.c.Status != browse.Unreadable {
 		parts = append(parts, fmt.Sprintf("exit %d", v.c.ExitCode))
@@ -286,6 +287,14 @@ func (v *campaignView) readLog(rel string) string {
 		return "(empty)"
 	}
 	return readTail(path, outputLimit)
+}
+
+// cleanupText is how a campaign's cleanup went, in words.
+func cleanupText(cleanup string) string {
+	if cleanup == "not-configured" {
+		return "no cleanup hook"
+	}
+	return "cleanup " + cleanup
 }
 
 func activityName(a browse.Activity) string {

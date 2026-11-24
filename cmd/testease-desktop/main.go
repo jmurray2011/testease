@@ -9,6 +9,7 @@ package main
 import (
 	"flag"
 	"os"
+	"strings"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -28,6 +29,13 @@ const appID = "io.github.jmurray2011.testease"
 // run that finishes or a verdict that lands shows up without a click.
 const refreshEvery = 5 * time.Second
 
+// openingSize is the window the app opens at, and sidebarWidth the sections
+// column's share of it. Every screen is laid out to fit beside the sections at
+// this size.
+var openingSize = fyne.NewSize(1380, 820)
+
+const sidebarWidth = 208
+
 func main() {
 	runsDir := flag.String("runs-dir", "", "where records are written (default $TESTEASE_RUNS_DIR, then the folder last chosen here)")
 	flag.Parse()
@@ -39,7 +47,7 @@ func main() {
 	w := a.NewWindow("testease")
 	s := newShell(w, dir, from, func(chosen string) { a.Preferences().SetString(prefRunsDir, chosen) })
 	w.SetContent(s.content)
-	w.Resize(fyne.NewSize(1380, 820))
+	w.Resize(openingSize)
 
 	go func() {
 		for range time.Tick(refreshEvery) {
@@ -73,7 +81,7 @@ func newShell(w fyne.Window, dir, from string, remember func(string)) *shell {
 
 	caption := widget.NewLabel("Runs directory")
 	caption.Importance = widget.LowImportance
-	s.where = widget.NewLabelWithStyle("", fyne.TextAlignLeading, fyne.TextStyle{Monospace: true})
+	s.where = widget.NewLabel("")
 	s.where.Truncation = fyne.TextTruncateEllipsis
 	change := widget.NewButtonWithIcon("Choose…", theme.FolderOpenIcon(), s.chooseDir)
 
@@ -99,7 +107,7 @@ func newShell(w fyne.Window, dir, from string, remember func(string)) *shell {
 // navPanelSized keeps the sections column a fixed width however wide the
 // window is.
 func navPanelSized(o fyne.CanvasObject) fyne.CanvasObject {
-	return container.New(&fixedWidth{width: 208}, o)
+	return container.New(&fixedWidth{width: sidebarWidth}, o)
 }
 
 type fixedWidth struct{ width float32 }
@@ -126,7 +134,8 @@ func (s *shell) setDir(dir, from string) {
 	if dir == "" {
 		s.where.SetText("not chosen")
 	} else {
-		s.where.SetText(shortPath(dir) + "\n(" + from + ")")
+		name, in := sidebarPath(dir)
+		s.where.SetText(strings.TrimSpace(name + "\n" + in + "\n(" + from + ")"))
 	}
 	s.runs = newRunsView(dir, s.openRecord)
 	s.showRuns()
@@ -135,8 +144,7 @@ func (s *shell) setDir(dir, from string) {
 func (s *shell) showRuns() {
 	s.onRuns = true
 	s.runs.reload()
-	s.body.Objects = []fyne.CanvasObject{s.runs.content}
-	s.body.Refresh()
+	s.show(s.runs.content)
 }
 
 func (s *shell) openRecord(dir string) {
@@ -146,7 +154,14 @@ func (s *shell) openRecord(dir string) {
 		return
 	}
 	s.onRuns = false
-	s.body.Objects = []fyne.CanvasObject{v.content}
+	s.show(v.content)
+}
+
+// show puts a screen in the body. Fyne grows a window to whatever its content
+// asks for, so a screen sits in a scroll: one that asks for more room than the
+// window has scrolls, and the window keeps the size the person gave it.
+func (s *shell) show(screen fyne.CanvasObject) {
+	s.body.Objects = []fyne.CanvasObject{container.NewScroll(screen)}
 	s.body.Refresh()
 }
 

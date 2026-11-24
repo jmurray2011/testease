@@ -50,6 +50,9 @@ type detailView struct {
 	// are in the cells' own records, not the parent's.
 	cells      *widget.List
 	onOpenCell func(dir string)
+
+	// judge reads the record again with its judge.
+	judge *action
 }
 
 func newDetailView(dir string, back func()) (*detailView, error) {
@@ -61,11 +64,11 @@ func newDetailViewFrom(dir, backLabel string, back func()) (*detailView, error) 
 	if err != nil {
 		return nil, err
 	}
-	v := &detailView{d: d, selected: -1, backLabel: backLabel, back: back}
+	v := &detailView{d: d, selected: -1, backLabel: backLabel, back: back, judge: newAction("Judge", theme.ConfirmIcon())}
 
 	// Header: where this is, what it measured, and how to get at the files.
 	status := newPill(statusOf(d.Run), statusKind(statusOf(d.Run)))
-	top := backHeader(backLabel, back, d.RunID, container.NewCenter(status), openFolderButton(d.Dir))
+	top := backHeader(backLabel, back, d.RunID, container.NewCenter(status), v.judge.Button, openFolderButton(d.Dir))
 
 	v.meta = metaParts(d)
 	metaLabel := widget.NewLabel(strings.Join(v.meta, "    "))

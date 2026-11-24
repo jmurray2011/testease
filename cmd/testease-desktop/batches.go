@@ -37,15 +37,16 @@ type batchesView struct {
 	message *widget.Label
 	table   *widget.Table
 	content fyne.CanvasObject
+	run     *action
 }
 
 func newBatchesView(dir string, onOpen func(browse.Batch)) *batchesView {
-	v := &batchesView{dir: dir, onOpen: onOpen, count: widget.NewLabel(""), message: message()}
+	v := &batchesView{dir: dir, onOpen: onOpen, count: widget.NewLabel(""), message: message(), run: newAction("Run batch…", theme.MediaPlayIcon())}
 	v.table = listing(func() int { return len(v.all) }, batchTitles, batchWidths, bcolBatch, v.cell,
 		func(row int) { v.onOpen(v.all[row]) })
 	refresh := widget.NewButtonWithIcon("Refresh", theme.ViewRefreshIcon(), v.reload)
 	v.content = container.NewBorder(
-		container.NewVBox(screenTitle("Batches", v.count, refresh), widget.NewSeparator(), v.message),
+		container.NewVBox(screenTitle("Batches", v.count, v.run.Button, refresh), widget.NewSeparator(), v.message),
 		container.NewVBox(widget.NewSeparator(), note("A batch's status is what its runs measured. Its judgment is what judges said of them, read from the judgment file as written.")),
 		nil, nil, v.table,
 	)
@@ -131,13 +132,14 @@ type batchView struct {
 	problem *widget.Label
 	table   *widget.Table
 	content fyne.CanvasObject
+	judge   *action
 }
 
 func newBatchView(runsDir string, b browse.Batch, back func(), openRun func(string)) *batchView {
-	v := &batchView{runsDir: runsDir, b: b, openRun: openRun, problem: message()}
+	v := &batchView{runsDir: runsDir, b: b, openRun: openRun, problem: message(), judge: newAction("Judge batch", theme.ConfirmIcon())}
 
 	top := backHeader("Batches", back, b.ID,
-		container.NewCenter(newPill(b.Status, groupStatusKind(b.Status))), openFolderButton(b.Dir))
+		container.NewCenter(newPill(b.Status, groupStatusKind(b.Status))), v.judge.Button, openFolderButton(b.Dir))
 	meta := note(batchMeta(b))
 	if b.Problem != "" {
 		showMessage(v.problem, b.Problem)

@@ -40,15 +40,16 @@ type campaignsView struct {
 	message *widget.Label
 	table   *widget.Table
 	content fyne.CanvasObject
+	run     *action
 }
 
 func newCampaignsView(dir string, onOpen func(browse.Campaign)) *campaignsView {
-	v := &campaignsView{dir: dir, onOpen: onOpen, count: widget.NewLabel(""), message: message()}
+	v := &campaignsView{dir: dir, onOpen: onOpen, count: widget.NewLabel(""), message: message(), run: newAction("Run campaign…", theme.MediaPlayIcon())}
 	v.table = listing(func() int { return len(v.all) }, campaignTitles, campaignWidths, ccolCampaign, v.cell,
 		func(row int) { v.onOpen(v.all[row]) })
 	refresh := widget.NewButtonWithIcon("Refresh", theme.ViewRefreshIcon(), v.reload)
 	v.content = container.NewBorder(
-		container.NewVBox(screenTitle("Campaigns", v.count, refresh), widget.NewSeparator(), v.message),
+		container.NewVBox(screenTitle("Campaigns", v.count, v.run.Button, refresh), widget.NewSeparator(), v.message),
 		container.NewVBox(widget.NewSeparator(), note("A campaign repeats one scenario with hooks around it. Each run it starts is a record of its own.")),
 		nil, nil, v.table,
 	)

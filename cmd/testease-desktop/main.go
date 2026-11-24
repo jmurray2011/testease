@@ -10,6 +10,7 @@ import (
 	"flag"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -186,7 +187,9 @@ func (s *shell) setDir(dir, from string) {
 	}
 	s.runs = newRunsView(dir, func(rec string) { s.openRecord(rec, "Runs", s.showRuns) })
 	s.batches = newBatchesView(dir, s.openBatch)
+	s.batches.run.set(s.chooseBatchFile)
 	s.campaigns = newCampaignsView(dir, func(c browse.Campaign) { s.openCampaign(c.ID) })
+	s.campaigns.run.set(s.chooseCampaign)
 	s.showRuns()
 }
 
@@ -232,6 +235,7 @@ func (s *shell) openBatch(b browse.Batch) {
 	var v *batchView
 	back := func() { s.show(v, v.content) }
 	v = newBatchView(s.dir, b, s.showBatches, func(rec string) { s.openRecord(rec, "Batch", back) })
+	v.judge.set(func() { s.startJob("judge batch "+b.ID, batchJudgeArgs(s.dir, b.ID)) })
 	s.highlight(sectionBatches)
 	s.show(v, v.content)
 }
@@ -253,6 +257,11 @@ func (s *shell) openRecord(dir, from string, back func()) {
 		return
 	}
 	v.onOpenCell = func(cell string) { s.openRecord(cell, "Matrix", func() { s.show(v, v.content) }) }
+	v.judge.set(func() {
+		if jv := s.startJob("judge "+filepath.Base(dir), judgeArgs(s.dir, dir)); jv != nil {
+			jv.record = dir
+		}
+	})
 	s.show(v, v.content)
 }
 

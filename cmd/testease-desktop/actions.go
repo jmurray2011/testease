@@ -4,11 +4,14 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/storage"
+	"fyne.io/fyne/v2/widget"
 
 	"github.com/jmurray2011/testease/internal/targetcatalog"
 )
@@ -52,13 +55,14 @@ func (s *shell) chooseScenarioRoot() {
 		s.tools.scenarioRoot, s.tools.scenarioFrom = uri.Path(), "chosen here"
 		s.showScenarios()
 	}, s.window)
+	d.Resize(pickerSize)
 	d.Show()
 }
 
 func (s *shell) openScenario(name string) {
 	v, err := newScenarioView(scenarioContext{
 		runsDir: s.dir, root: s.tools.scenarioRoot, name: name,
-		targets: catalogNames(s.tools.catalog), start: s.startJob,
+		targets: catalogNames(s.tools.catalog), start: func(title string, args []string) { s.startJob(title, args) },
 	}, s.showScenarios)
 	if err != nil {
 		dialog.ShowError(err, s.window)
@@ -87,10 +91,10 @@ func catalogNames(path string) []string {
 }
 
 // startJob starts a testease command and shows it.
-func (s *shell) startJob(title string, args []string) {
+func (s *shell) startJob(title string, args []string) *jobView {
 	if s.dir == "" {
 		dialog.ShowError(errors.New("choose the runs directory first: a run writes its record there"), s.window)
-		return
+		return nil
 	}
 	var v *jobView
 	v = newJobView(title, args, s.dir, s.showActivity, s.showTargets, func(rec string) {
@@ -102,14 +106,15 @@ func (s *shell) startJob(title string, args []string) {
 
 	if s.tools.testease == "" {
 		v.fail(errors.New("no testease binary found: put testease beside this app or on PATH, or start this app with --testease <path>"))
-		return
+		return v
 	}
 	j, err := startJob(s.tools.testease, args, os.Environ(), func() { s.onUI(v.refresh) })
 	if err != nil {
 		v.fail(err)
-		return
+		return v
 	}
 	v.attach(j)
+	return v
 }
 
 func (s *shell) showActivity() {
@@ -181,4 +186,74 @@ func (s *shell) showTargets() {
 	}
 	s.show(v, v.content)
 	v.reload()
+}
+
+// pickerSize is big enough to find a file in; Fyne's own is small.
+var pickerSize = fyne.NewSize(900, 640)
+
+// chooseBatchFile asks for a batch file and runs it.
+func (s *shell) chooseBatchFile() {
+	d := dialog.NewFileOpen(func(f fyne.URIReadCloser, err error) {
+		if err != nil || f == nil {
+			return
+		}
+		path := pickedPath(f.URI().Path())
+		_ = f.Close()
+		rememberFolder(prefBatchFolder, path)
+		s.runBatch(path)
+	}, s.window)
+	d.SetFilter(storage.NewExtensionFileFilter([]string{".yaml", ".yml"}))
+	if l := lastFolder(prefBatchFolder); l != nil {
+		d.SetLocation(l)
+	}
+	d.Resize(pickerSize)
+	d.Show()
+}
+
+func (s *shell) runBatch(file string) {
+	s.startJob("batch "+filepath.Base(file), batchRunArgs(s.dir, s.tools.scenarioRoot, file))
+}
+
+// chooseCampaign asks for a campaign's folder, then for any overrides, and
+// runs it. Nothing typed here is remembered: an override changes what is
+// measured, so each run says it again.
+func (s *shell) chooseCampaign() {
+	d := dialog.NewFolderOpen(func(uri fyne.ListableURI, err error) {
+		if err != nil || uri == nil {
+			return
+		}
+		dir := pickedPath(uri.Path())
+		rememberFolder(prefCampaignFolder, dir)
+		extra := widget.NewMultiLineEntry()
+		extra.Validator = overridesValid
+		extra.SetPlaceHolder("--repeat=3\n--target=lab-box")
+		extra.SetMinRowsVisible(4)
+		form := dialog.NewForm("Run campaign "+filepath.Base(dir), "Run", "Cancel", []*widget.FormItem{
+			widget.NewFormItem("Folder", note(dir)),
+			{Text: "Overrides", Widget: extra, HintText: "One flag a line, passed as typed. Leave empty to run the campaign as written."},
+		}, func(ok bool) {
+			if !ok {
+				return
+			}
+			if err := s.runCampaign(dir, extra.Text); err != nil {
+				dialog.ShowError(err, s.window)
+			}
+		}, s.window)
+		form.Resize(fyne.NewSize(560, 320))
+		form.Show()
+	}, s.window)
+	if l := lastFolder(prefCampaignFolder); l != nil {
+		d.SetLocation(l)
+	}
+	d.Resize(pickerSize)
+	d.Show()
+}
+
+func (s *shell) runCampaign(dir, extra string) error {
+	args, err := campaignRunArgs(s.dir, s.tools.scenarioRoot, dir, extra)
+	if err != nil {
+		return err
+	}
+	s.startJob("campaign "+filepath.Base(dir), args)
+	return nil
 }

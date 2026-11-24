@@ -32,6 +32,9 @@ type Invoker interface {
 	Invoke(context.Context, io.Writer, io.Writer, ...string) int
 }
 
+// stopGrace is how long a run asked to stop gets before it is killed.
+const stopGrace = 2 * time.Minute
+
 type ExecInvoker struct {
 	Executable string
 	Env        []string
@@ -39,6 +42,11 @@ type ExecInvoker struct {
 
 func (e ExecInvoker) Invoke(ctx context.Context, stdout, stderr io.Writer, args ...string) int {
 	command := exec.CommandContext(ctx, e.Executable, args...)
+	// Stopped, a run finishes what is in flight and closes its record as
+	// interrupted; killed, it leaves a record that just ends. It is asked,
+	// and killed only if it has not stopped after stopGrace.
+	asStoppable(command)
+	command.WaitDelay = stopGrace
 	command.Stdout = stdout
 	command.Stderr = stderr
 	command.Env = e.Env

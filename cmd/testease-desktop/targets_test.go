@@ -217,6 +217,7 @@ func ec2Targets(t *testing.T, cli *fakeCLI) *targetsView {
 	v := newFakeTargets(t, cli)
 	v.profile.SetText("lab")
 	v.region.SetText("us-east-2")
+	v.runner.SetText("josh@box")
 	v.choose(placeEC2)
 	return v
 }
@@ -230,7 +231,7 @@ func TestEC2TargetsAreListedByReapsLook(t *testing.T) {
 	v := ec2Targets(t, cli)
 
 	last := cli.asked[len(cli.asked)-1]
-	want := []string{"--runs-dir", "/srv/runs", "reap", "--platform", "ec2", "--aws-profile", "lab", "--aws-region", "us-east-2", "--output", "json"}
+	want := []string{"--runs-dir", "/srv/runs", "reap", "--platform", "ec2", "--aws-profile", "lab", "--aws-region", "us-east-2", "--runner", "josh@box", "--output", "json"}
 	if !slices.Equal(last, want) {
 		t.Errorf("asked %q, want %q", last, want)
 	}
@@ -251,7 +252,7 @@ func TestRemovingEC2TargetsAsksThenForcesWithTheSameAccount(t *testing.T) {
 
 	cli := &fakeCLI{answers: map[string]string{
 		"targets": standingJSON, "--platform ec2": ec2PreviewJSON,
-		"--platform ec2 --aws-profile lab --aws-region us-east-2 --output json --force": `{"targets": [], "removable": 1, "removed": ["i-0abc"], "notices": []}`,
+		"--platform ec2 --aws-profile lab --aws-region us-east-2 --runner josh@box --output json --force": `{"targets": [], "removable": 1, "removed": ["i-0abc"], "notices": []}`,
 	}}
 	v := ec2Targets(t, cli)
 	var question string
@@ -393,5 +394,28 @@ func TestTheCountIsClearedWhileLooking(t *testing.T) {
 	v.reload()
 	if v.count.Text != "" {
 		t.Errorf("count = %q while looking", v.count.Text)
+	}
+}
+
+// A cloud look is of one runner's targets. It starts as this one, and can be
+// pointed at another name the same person runs under - WSL's user beside
+// Windows' - which is remembered for next time. Proof of a run still comes
+// from its record, so naming a runner offers nothing reap could not prove.
+func TestTheCloudRunnerStartsAsThisOneAndIsRemembered(t *testing.T) {
+	test.NewTempApp(t)
+
+	cli := &fakeCLI{answers: map[string]string{"targets": standingJSON}}
+	v := newFakeTargets(t, cli)
+	if v.runner.Text == "" || !strings.Contains(v.runner.Text, "@") {
+		t.Errorf("runner starts as %q, want this runner's user@host", v.runner.Text)
+	}
+	v.profile.SetText("lab")
+	v.region.SetText("us-east-2")
+	v.runner.SetText("jmd9qs@atreides-ghola1")
+	v.choose(placeEC2)
+
+	again := newFakeTargets(t, cli)
+	if again.runner.Text != "jmd9qs@atreides-ghola1" {
+		t.Errorf("a new screen starts with runner %q", again.runner.Text)
 	}
 }

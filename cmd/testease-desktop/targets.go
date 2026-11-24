@@ -16,6 +16,7 @@ import (
 	"fyne.io/fyne/v2/widget"
 
 	"github.com/jmurray2011/testease/internal/record"
+	"github.com/jmurray2011/testease/internal/runnerid"
 )
 
 // cliCall runs one testease command and returns what it wrote to stdout.
@@ -124,8 +125,12 @@ type targetsView struct {
 	places                   *widget.Select
 	choosing                 bool
 	profile, region, cluster *widget.Entry
+	runner                   *widget.Entry
 	account                  *fyne.Container
 }
+
+// prefCloudRunner is the runner a cloud look was last made for.
+const prefCloudRunner = "cloud-runner"
 
 // Where the Targets screen looks.
 const (
@@ -143,7 +148,17 @@ func newTargetsView(runsDir string, call cliCall, openRun func(string)) *targets
 		async: func(f func()) { go f() }, onUI: fyne.Do,
 		count: widget.NewLabel(""), message: message(),
 		profile: widget.NewEntry(), region: widget.NewEntry(), cluster: widget.NewEntry(),
+		runner: widget.NewEntry(),
 	}
+	// Cloud targets are labelled with the runner that started them, and a
+	// person can run under more than one name - Windows' user and WSL's on
+	// one machine. The name last looked for is remembered; it narrows the
+	// look, and removal still needs the run's own record.
+	v.runner.SetText(runnerid.Runner())
+	if last := fyne.CurrentApp().Preferences().String(prefCloudRunner); last != "" {
+		v.runner.SetText(last)
+	}
+	v.runner.SetPlaceHolder("runner, user@host")
 	// The account is connection setup, like a path: the same variables the
 	// CLI reads fill it in.
 	v.profile.SetText(os.Getenv("TESTEASE_AWS_PROFILE"))
@@ -151,7 +166,7 @@ func newTargetsView(runsDir string, call cliCall, openRun func(string)) *targets
 	v.profile.SetPlaceHolder("AWS profile")
 	v.region.SetPlaceHolder("region")
 	v.cluster.SetPlaceHolder("ECS cluster")
-	for _, e := range []*widget.Entry{v.profile, v.region, v.cluster} {
+	for _, e := range []*widget.Entry{v.profile, v.region, v.cluster, v.runner} {
 		e.OnSubmitted = func(string) { v.reload() }
 	}
 	v.places = widget.NewSelect(placeNames, func(name string) {
@@ -164,7 +179,7 @@ func newTargetsView(runsDir string, call cliCall, openRun func(string)) *targets
 	v.choosing = true
 	v.places.SetSelectedIndex(placeDocker)
 	v.choosing = false
-	v.account = container.NewGridWithColumns(4, v.profile, v.region, v.cluster,
+	v.account = container.NewGridWithColumns(5, v.profile, v.region, v.runner, v.cluster,
 		widget.NewButtonWithIcon("Look", theme.SearchIcon(), v.reload))
 	v.account.Hide()
 	v.table = listing(func() int { return len(v.all) }, targetTitles, targetWidths, tcolTarget, v.cell, nil)
@@ -249,6 +264,10 @@ func (v *targetsView) reapArgs(force bool) []string {
 		platform := map[int]string{placeEC2: "ec2", placeECS: "ecs"}[v.place]
 		args = append(args, "--platform", platform,
 			"--aws-profile", strings.TrimSpace(v.profile.Text), "--aws-region", strings.TrimSpace(v.region.Text))
+		if r := strings.TrimSpace(v.runner.Text); r != "" {
+			args = append(args, "--runner", r)
+			fyne.CurrentApp().Preferences().SetString(prefCloudRunner, r)
+		}
 		if v.place == placeECS {
 			args = append(args, "--ecs-cluster", strings.TrimSpace(v.cluster.Text))
 		}

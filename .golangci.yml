@@ -58,8 +58,9 @@ linters:
             - pkg: github.com/jmurray2011/testease/internal
               desc: internal/publish imports internal/record only
 
-        # browse is a projection for people: it reads records and the verdicts
-        # judges wrote, and concludes nothing of its own.
+        # browse is a projection for people: it reads records, the verdicts
+        # judges wrote, and what batch and campaign runners saved beside them,
+        # and concludes nothing of its own.
         browse-reads-records-and-verdicts:
           list-mode: lax
           files:
@@ -68,10 +69,12 @@ linters:
             - $gostd
             - github.com/jmurray2011/testease/internal/record
             - github.com/jmurray2011/testease/internal/judge
+            - github.com/jmurray2011/testease/internal/batch
+            - github.com/jmurray2011/testease/internal/campaign
             - github.com/jmurray2011/testease/internal/browse
           deny:
             - pkg: github.com/jmurray2011/testease/internal
-              desc: internal/browse reads records and verdicts only
+              desc: internal/browse reads records, verdicts, batches and campaigns only
 
         # doctor reads declarations, verifies their external input bindings,
         # and asks a daemon. It never dials a target or writes a record.
@@ -137,6 +140,17 @@ linters:
           deny:
             - pkg: github.com/jmurray2011/testease/internal
               desc: a provider resolves targets and knows nothing else
+
+        environment-imports-nothing-internal:
+          list-mode: lax
+          files:
+            - "**/internal/environment/**"
+          allow:
+            - $gostd
+            - github.com/jmurray2011/testease/internal/environment
+          deny:
+            - pkg: github.com/jmurray2011/testease/internal
+              desc: internal/environment is a table and knows nothing else
 
         reap-imports-nothing-internal:
           list-mode: lax

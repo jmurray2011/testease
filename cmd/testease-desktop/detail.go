@@ -40,31 +40,32 @@ type detailView struct {
 
 	meta, verdicts, targets, notes []string
 	content                        fyne.CanvasObject
+
+	// backLabel names the screen back goes to: the record was opened from
+	// the Runs listing, a batch or a campaign.
+	backLabel string
+	back      func()
+
+	// cells lists a matrix run's cells, and onOpenCell opens one: the steps
+	// are in the cells' own records, not the parent's.
+	cells      *widget.List
+	onOpenCell func(dir string)
 }
 
 func newDetailView(dir string, back func()) (*detailView, error) {
+	return newDetailViewFrom(dir, "Runs", back)
+}
+
+func newDetailViewFrom(dir, backLabel string, back func()) (*detailView, error) {
 	d, err := browse.Open(dir)
 	if err != nil {
 		return nil, err
 	}
-	v := &detailView{d: d, selected: -1}
+	v := &detailView{d: d, selected: -1, backLabel: backLabel, back: back}
 
 	// Header: where this is, what it measured, and how to get at the files.
-	backButton := widget.NewButtonWithIcon("Runs", theme.NavigateBackIcon(), back)
-	backButton.Importance = widget.LowImportance
-	id := widget.NewLabelWithStyle(d.RunID, fyne.TextAlignLeading, fyne.TextStyle{Monospace: true})
-	id.Selectable = true
 	status := newPill(statusOf(d.Run), statusKind(statusOf(d.Run)))
-	openFolder := widget.NewButtonWithIcon("Open folder", theme.FolderOpenIcon(), func() {
-		if u, err := url.Parse(storage.NewFileURI(d.Dir).String()); err == nil {
-			_ = fyne.CurrentApp().OpenURL(u)
-		}
-	})
-	id.Truncation = fyne.TextTruncateEllipsis
-	top := container.NewBorder(nil, nil,
-		container.NewHBox(backButton, widget.NewLabel("/")),
-		container.NewHBox(container.NewCenter(status), openFolder),
-		id)
+	top := backHeader(backLabel, back, d.RunID, container.NewCenter(status), openFolderButton(d.Dir))
 
 	v.meta = metaParts(d)
 	metaLabel := widget.NewLabel(strings.Join(v.meta, "    "))
@@ -94,7 +95,10 @@ func newDetailView(dir string, back func()) (*detailView, error) {
 	v.steps.OnSelected = v.selectStep
 	stepsHeader := widget.NewLabel(stepsHeading(d))
 	stepsHeader.Importance = widget.LowImportance
-	left := container.NewBorder(stepsHeader, nil, nil, nil, v.steps)
+	var left fyne.CanvasObject = container.NewBorder(stepsHeader, nil, nil, nil, v.steps)
+	if len(d.CellList) > 0 && len(d.StepList) == 0 {
+		left = v.cellList(d)
+	}
 
 	// The selected step, in the middle.
 	v.stepTitle = widget.NewLabelWithStyle("", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
@@ -127,9 +131,12 @@ func newDetailView(dir string, back func()) (*detailView, error) {
 		section("Read notes", lines(v.notes)),
 	)))
 
-	if len(d.StepList) == 0 {
+	switch {
+	case len(d.CellList) > 0 && len(d.StepList) == 0:
+		v.stepTitle.SetText(fmt.Sprintf("This matrix run measured in %s. Pick one to open its record.", plural(len(d.CellList), "cell")))
+	case len(d.StepList) == 0:
 		v.stepTitle.SetText("This record has no steps.")
-	} else {
+	default:
 		v.steps.Select(firstOfInterest(d.StepList))
 	}
 
@@ -143,6 +150,51 @@ func newDetailView(dir string, back func()) (*detailView, error) {
 
 // firstOfInterest is the step a person opening a record wants first: the first
 // one that did not measure cleanly, or the first step when all of them did.
+// cellList is a matrix run's cells, on the left where a run's steps go.
+func (v *detailView) cellList(d browse.Detail) fyne.CanvasObject {
+	v.cells = widget.NewList(
+		func() int { return len(d.CellList) },
+		func() fyne.CanvasObject {
+			label := widget.NewLabelWithStyle("", fyne.TextAlignLeading, fyne.TextStyle{Monospace: true})
+			label.Truncation = fyne.TextTruncateEllipsis
+			return container.NewBorder(nil, nil, nil, container.NewCenter(newPill("", pillNeutral)), label)
+		},
+		func(i widget.ListItemID, o fyne.CanvasObject) {
+			c := d.CellList[i]
+			row := o.(*fyne.Container)
+			row.Objects[0].(*widget.Label).SetText(c.Key)
+			status := c.Status
+			if status == "" {
+				status = "no outcome"
+			}
+			row.Objects[1].(*fyne.Container).Objects[0].(*pill).Set(status, statusKind(c.Status))
+		},
+	)
+	v.cells.OnSelected = func(i widget.ListItemID) {
+		v.cells.UnselectAll()
+		if i < 0 || i >= len(d.CellList) || v.onOpenCell == nil {
+			return
+		}
+		// A cell's key names its folder under the parent; one that would
+		// leave the record is not followed.
+		if rel, err := filepath.Rel(d.Dir, d.CellList[i].Dir); err == nil && filepath.IsLocal(rel) {
+			v.onOpenCell(d.CellList[i].Dir)
+		}
+	}
+	heading := widget.NewLabel("Cells")
+	heading.Importance = widget.LowImportance
+	return container.NewBorder(heading, nil, nil, nil, v.cells)
+}
+
+// openFolderButton opens a folder in the OS's file manager.
+func openFolderButton(dir string) *widget.Button {
+	return widget.NewButtonWithIcon("Open folder", theme.FolderOpenIcon(), func() {
+		if u, err := url.Parse(storage.NewFileURI(dir).String()); err == nil {
+			_ = fyne.CurrentApp().OpenURL(u)
+		}
+	})
+}
+
 func firstOfInterest(steps []browse.Step) int {
 	for i, s := range steps {
 		if s.Status != string(record.StatusMeasured) {
@@ -379,7 +431,10 @@ func targetParts(d browse.Detail) []string {
 		}
 		out = append(out, strings.TrimSpace(h.Host+" "+ref)+" · "+fateText(fates[h.Host]))
 	}
-	if len(out) == 0 {
+	switch {
+	case len(out) == 0 && len(d.CellList) > 0:
+		return []string{"Targets are resolved in each cell. Open a cell to see its targets and what became of them."}
+	case len(out) == 0:
 		return []string{"No target was resolved."}
 	}
 	return out

@@ -350,3 +350,34 @@ func TestAVerdictSaysWhetherItIsInItsJudgesPassSet(t *testing.T) {
 		t.Errorf("external judge = %+v, want its pass set left unknown", v)
 	}
 }
+
+// A matrix run's steps are in its cells, each a record of its own under the
+// parent. Opening the parent lists them, so it does not read as a run that
+// measured nothing.
+func TestAMatrixRecordListsItsCells(t *testing.T) {
+	t.Parallel()
+
+	runs := t.TempDir()
+	dir := recorded(t, runs, "docs-compat-20261106T001452Z", func(w *record.Writer) {
+		emit(t, w, record.KindRunStarted, 0, record.RunStarted{RunID: "docs-compat-20261106T001452Z", Scenario: record.ScenarioRef{Name: "docs-compat"}})
+		emit(t, w, record.KindCellStarted, 0, record.CellStarted{Key: "7.2.6+1.0.10"})
+		emit(t, w, record.KindCellFinished, 0, record.CellFinished{Key: "7.2.6+1.0.10", Status: record.StatusMeasured})
+		emit(t, w, record.KindCellStarted, 0, record.CellStarted{Key: "7.3.0+1.0.10"})
+		emit(t, w, record.KindRunFinished, 0, record.RunFinished{Status: record.StatusMeasured})
+	})
+
+	d, err := browse.Open(dir)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if len(d.CellList) != 2 {
+		t.Fatalf("cells = %+v", d.CellList)
+	}
+	first := d.CellList[0]
+	if first.Key != "7.2.6+1.0.10" || first.Status != string(record.StatusMeasured) || first.Dir != filepath.Join(dir, record.CellsDir, "7.2.6+1.0.10") {
+		t.Errorf("first cell = %+v", first)
+	}
+	if d.CellList[1].Status != "" {
+		t.Errorf("a cell that never finished has no status: %+v", d.CellList[1])
+	}
+}

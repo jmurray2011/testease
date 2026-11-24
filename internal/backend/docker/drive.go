@@ -333,7 +333,8 @@ func pathArchive(source, destination string, uid, gid int, readOnly, requireDire
 	if requireDirectory && !info.IsDir() {
 		return nil, fmt.Errorf("%s is not a directory", source)
 	}
-	containerPath := path.Clean(filepath.ToSlash(destination))
+	// A path in a Linux container, whatever the runner is: path, not filepath.
+	containerPath := path.Clean(destination)
 	if !strings.HasPrefix(containerPath, "/") {
 		return nil, fmt.Errorf("destination %q is not an absolute container path", destination)
 	}

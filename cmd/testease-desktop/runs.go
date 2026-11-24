@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
-	"strings"
+	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
@@ -47,15 +47,23 @@ type runsView struct {
 	// what is in them, up to a cap, so a run id is not cut off.
 	widths [columns]float32
 
-	filter  *widget.Entry
-	count   *widget.Label
-	message *widget.Label
-	table   *widget.Table
-	content fyne.CanvasObject
+	filter   *widget.Entry
+	scenario *widget.Select
+	outcome  *widget.Select
+	since    *widget.Select
+	clearAll *widget.Button
+	// choosing is set while the screen sets its own selects, so their
+	// change handlers do not re-filter or overwrite what was remembered.
+	choosing bool
+	now      func() time.Time
+	count    *widget.Label
+	message  *widget.Label
+	table    *widget.Table
+	content  fyne.CanvasObject
 }
 
 func newRunsView(dir string, onOpen func(dir string)) *runsView {
-	v := &runsView{dir: dir, onOpen: onOpen}
+	v := &runsView{dir: dir, onOpen: onOpen, now: time.Now}
 
 	title := widget.NewLabelWithStyle("Runs", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 	title.SizeName = theme.SizeNameSubHeadingText
@@ -63,7 +71,6 @@ func newRunsView(dir string, onOpen func(dir string)) *runsView {
 	v.count.Importance = widget.LowImportance
 
 	v.filter = widget.NewEntry()
-	v.filter.SetPlaceHolder("Filter by run, scenario or status")
 	v.filter.OnChanged = func(string) { v.apply() }
 	refresh := widget.NewButtonWithIcon("Refresh", theme.ViewRefreshIcon(), v.reload)
 
@@ -115,8 +122,38 @@ func newRunsView(dir string, onOpen func(dir string)) *runsView {
 		}
 	}
 
-	filterBox := container.NewGridWrap(fyne.NewSize(300, v.filter.MinSize().Height), v.filter)
-	header := container.NewHBox(title, v.count, layout.NewSpacer(), filterBox, refresh)
+	prefs := fyne.CurrentApp().Preferences()
+	choose := func(key string) func(string) {
+		return func(picked string) {
+			if v.choosing {
+				return
+			}
+			if picked == anyScenario || picked == anyOutcome || picked == anyTime {
+				prefs.RemoveValue(key)
+			} else {
+				prefs.SetString(key, picked)
+			}
+			v.apply()
+		}
+	}
+	v.scenario = widget.NewSelect([]string{anyScenario}, choose(prefRunsScenario))
+	v.outcome = widget.NewSelect(outcomeChoices(), choose(prefRunsOutcome))
+	v.since = widget.NewSelect(sinceChoices, choose(prefRunsSince))
+	v.choosing = true
+	v.scenarioOptions(nil, firstSet(prefs.String(prefRunsScenario), anyScenario))
+	v.outcome.SetSelected(firstSet(prefs.String(prefRunsOutcome), anyOutcome))
+	v.since.SetSelected(firstSet(prefs.String(prefRunsSince), anyTime))
+	v.choosing = false
+	v.clearAll = widget.NewButtonWithIcon("Clear", theme.ContentClearIcon(), v.clear)
+
+	v.filter.SetPlaceHolder("Search runs")
+	height := v.filter.MinSize().Height
+	header := container.NewHBox(title, v.count, layout.NewSpacer(),
+		container.NewGridWrap(fyne.NewSize(200, height), v.scenario),
+		container.NewGridWrap(fyne.NewSize(180, height), v.outcome),
+		container.NewGridWrap(fyne.NewSize(140, height), v.since),
+		container.NewGridWrap(fyne.NewSize(200, height), v.filter),
+		v.clearAll, refresh)
 	footer := widget.NewLabel("Status is what the run measured. Verdicts come only from judges; a run with no verdict has not been judged yet.")
 	footer.Importance = widget.LowImportance
 	footer.Wrapping = fyne.TextWrapWord
@@ -165,8 +202,31 @@ func (v *runsView) reload() {
 		}
 		return v.all[i].RunID < v.all[j].RunID
 	})
+	v.scenarioOptions(v.all, v.scenario.Selected)
 	v.fit()
 	v.apply()
+}
+
+// scenarioOptions offers every scenario in the listing, and keeps the one
+// chosen even when none of its runs is here.
+func (v *runsView) scenarioOptions(runs []browse.Run, chosen string) {
+	seen := map[string]bool{}
+	var names []string
+	for _, r := range runs {
+		if r.Scenario != "" && !seen[r.Scenario] {
+			seen[r.Scenario] = true
+			names = append(names, r.Scenario)
+		}
+	}
+	if chosen != "" && chosen != anyScenario && !seen[chosen] {
+		names = append(names, chosen)
+	}
+	sort.Strings(names)
+	was := v.choosing
+	v.choosing = true
+	v.scenario.Options = append([]string{anyScenario}, names...)
+	v.scenario.SetSelected(firstSet(chosen, anyScenario))
+	v.choosing = was
 }
 
 // fitCap is as wide as the Run column gets: what is left beside the sections
@@ -199,22 +259,54 @@ func (v *runsView) showMessage(text string) {
 
 // apply narrows the listing to what the filter matches.
 func (v *runsView) apply() {
-	needle := strings.ToLower(strings.TrimSpace(v.filter.Text))
+	f := v.current()
+	now := v.now()
+	status := func(r browse.Run) string { return v.status[r.Dir] }
 	v.shown = v.shown[:0]
 	for _, r := range v.all {
-		if needle == "" ||
-			strings.Contains(strings.ToLower(r.RunID), needle) ||
-			strings.Contains(strings.ToLower(r.Scenario), needle) ||
-			strings.Contains(strings.ToLower(v.status[r.Dir]), needle) {
+		if f.matches(r, status, now) {
 			v.shown = append(v.shown, r)
 		}
 	}
-	if needle == "" {
+	if !f.active() {
 		v.count.SetText(plural(len(v.all), "record"))
+		v.clearAll.Disable()
 	} else {
 		v.count.SetText(fmt.Sprintf("%d of %s", len(v.shown), plural(len(v.all), "record")))
+		v.clearAll.Enable()
 	}
 	v.table.Refresh()
+}
+
+func (v *runsView) current() runFilter {
+	return runFilter{Text: v.filter.Text, Scenario: v.scenario.Selected, Outcome: v.outcome.Selected, Since: v.since.Selected}
+}
+
+// clear shows every record again, and forgets the choices.
+func (v *runsView) clear() {
+	prefs := fyne.CurrentApp().Preferences()
+	for _, k := range []string{prefRunsScenario, prefRunsOutcome, prefRunsSince} {
+		prefs.RemoveValue(k)
+	}
+	v.choosing = true
+	v.scenario.SetSelected(anyScenario)
+	v.outcome.SetSelected(anyOutcome)
+	v.since.SetSelected(anyTime)
+	v.filter.SetText("")
+	v.choosing = false
+	v.apply()
+}
+
+// onlyScenario lists one scenario's runs, whatever else was chosen.
+func (v *runsView) onlyScenario(name string) {
+	v.choosing = true
+	v.outcome.SetSelected(anyOutcome)
+	v.since.SetSelected(anyTime)
+	v.filter.SetText("")
+	v.choosing = false
+	v.scenarioOptions(v.all, name)
+	fyne.CurrentApp().Preferences().SetString(prefRunsScenario, name)
+	v.apply()
 }
 
 // cell is what one cell of the listing says, and whether it is a pill.

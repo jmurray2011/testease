@@ -272,8 +272,13 @@ func (v *targetsView) reapArgs(force bool) []string {
 		platform := map[int]string{placeEC2: "ec2", placeECS: "ecs"}[v.place]
 		profile, region := strings.TrimSpace(v.profile.Text), strings.TrimSpace(v.region.Text)
 		args = append(args, "--platform", platform, "--aws-profile", profile, "--aws-region", region)
-		prefs.SetString(prefCloudProfile, profile)
-		prefs.SetString(prefCloudRegion, region)
+		// What the environment supplied stays the environment's.
+		if profile != os.Getenv("TESTEASE_AWS_PROFILE") {
+			prefs.SetString(prefCloudProfile, profile)
+		}
+		if region != os.Getenv("TESTEASE_AWS_REGION") {
+			prefs.SetString(prefCloudRegion, region)
+		}
 		if r := strings.TrimSpace(v.runner.Text); r != "" {
 			args = append(args, "--runner", r)
 			prefs.SetString(prefCloudRunner, r)

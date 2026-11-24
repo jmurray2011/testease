@@ -48,6 +48,7 @@ func main() {
 
 	a := app.NewWithID(appID)
 	a.Settings().SetTheme(appTheme{})
+	a.SetIcon(appIcon)
 
 	dir, from := resolveRunsDir(*runsDir, os.Getenv("TESTEASE_RUNS_DIR"), a.Preferences().String(prefRunsDir))
 	w := a.NewWindow("testease")
@@ -76,7 +77,8 @@ func main() {
 type navSection int
 
 const (
-	sectionRuns navSection = iota
+	sectionHome navSection = iota
+	sectionRuns
 	sectionBatches
 	sectionCampaigns
 	sectionScenarios
@@ -86,7 +88,7 @@ const (
 	sections
 )
 
-var sectionNames = [sections]string{"Runs", "Batches", "Campaigns", "Scenarios", "Activity", "Targets", "Settings"}
+var sectionNames = [sections]string{"Home", "Runs", "Batches", "Campaigns", "Scenarios", "Activity", "Targets", "Settings"}
 
 // shell is the window: sections on the left, the current screen on the right.
 type shell struct {
@@ -95,6 +97,7 @@ type shell struct {
 
 	dir, from string
 	section   navSection
+	home      *homeView
 	runs      *runsView
 	batches   *batchesView
 	campaigns *campaignsView
@@ -108,6 +111,11 @@ type shell struct {
 	// whatever goroutine calls it.
 	uiCall func(func())
 
+	// background is whether the app is behind other windows, where a job
+	// that ends is worth a desktop notification; notify sends one.
+	background bool
+	notify     func(title, body string)
+
 	buttons [sections]*widget.Button
 	where   *widget.Label
 	body    *fyne.Container
@@ -116,12 +124,22 @@ type shell struct {
 
 func newShell(w fyne.Window, dir, from string, remember func(string)) *shell {
 	s := &shell{window: w, remember: remember, dir: dir, from: from}
+	s.notify = func(title, body string) {
+		fyne.CurrentApp().SendNotification(fyne.NewNotification(title, body))
+	}
+	life := fyne.CurrentApp().Lifecycle()
+	life.SetOnExitedForeground(func() { s.background = true })
+	life.SetOnEnteredForeground(func() { s.background = false })
 
 	name := widget.NewLabelWithStyle("testease", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
-	nav := container.NewVBox(name)
-	shows := [sections]func(){s.showRuns, s.showBatches, s.showCampaigns, s.showScenarios, s.showActivity, s.showTargets, s.showSettings}
+	logo := canvas.NewImageFromResource(logoIcon)
+	logo.FillMode = canvas.ImageFillContain
+	logo.SetMinSize(fyne.NewSize(22, 22))
+	nav := container.NewVBox(container.NewHBox(container.NewPadded(logo), name))
+	shows := [sections]func(){s.showHome, s.showRuns, s.showBatches, s.showCampaigns, s.showScenarios, s.showActivity, s.showTargets, s.showSettings}
+	icons := sectionIcons()
 	for i := range sections {
-		b := widget.NewButton(sectionNames[i], shows[i])
+		b := widget.NewButtonWithIcon(sectionNames[i], icons[i], shows[i])
 		b.Alignment = widget.ButtonAlignLeading
 		s.buttons[i] = b
 		nav.Add(b)
@@ -185,12 +203,13 @@ func (s *shell) setDir(dir, from string) {
 		name, in := sidebarPath(dir)
 		s.where.SetText(strings.TrimSpace(name + "\n" + in + "\n(" + from + ")"))
 	}
+	s.home = newHomeView(dir, func(rec string) { s.openRecord(rec, "Home", s.showHome) }, s.showScenarioRuns)
 	s.runs = newRunsView(dir, func(rec string) { s.openRecord(rec, "Runs", s.showRuns) })
 	s.batches = newBatchesView(dir, s.openBatch)
 	s.batches.run.set(s.chooseBatchFile)
 	s.campaigns = newCampaignsView(dir, func(c browse.Campaign) { s.openCampaign(c.ID) })
 	s.campaigns.run.set(s.chooseCampaign)
-	s.showRuns()
+	s.showHome()
 }
 
 // highlight marks the section a screen belongs to.
@@ -204,6 +223,18 @@ func (s *shell) highlight(sec navSection) {
 		}
 		b.Refresh()
 	}
+}
+
+func (s *shell) showHome() {
+	s.highlight(sectionHome)
+	s.home.reload()
+	s.show(s.home, s.home.content)
+}
+
+// showScenarioRuns lists one scenario's runs.
+func (s *shell) showScenarioRuns(name string) {
+	s.runs.onlyScenario(name)
+	s.showRuns()
 }
 
 func (s *shell) showRuns() {
@@ -279,7 +310,10 @@ func (s *shell) show(view any, screen fyne.CanvasObject) {
 // re-reading it under the person reading it would move the selection they are
 // looking at.
 func (s *shell) tick() {
+	s.countJobs()
 	switch v := s.current.(type) {
+	case *homeView:
+		v.reload()
 	case *runsView:
 		v.reload()
 	case *batchesView:
@@ -292,6 +326,13 @@ func (s *shell) tick() {
 		v.reload()
 	case *activityView:
 		v.reload()
+	}
+}
+
+// countJobs keeps Activity's count of running jobs current.
+func (s *shell) countJobs() {
+	if b := s.buttons[sectionActivity]; b.Text != activityLabel(len(s.running())) {
+		b.SetText(activityLabel(len(s.running())))
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/test"
 )
 
@@ -444,5 +445,23 @@ func TestTheCloudAccountIsRememberedUnlessTheEnvironmentNamesOne(t *testing.T) {
 	fromEnv := newFakeTargets(t, cli)
 	if fromEnv.profile.Text != "from-env" || fromEnv.region.Text != "eu-west-1" {
 		t.Errorf("with the environment set, the screen starts with %q %q", fromEnv.profile.Text, fromEnv.region.Text)
+	}
+}
+
+// A value the environment supplied is the environment's to keep: it is not
+// remembered as though it had been typed.
+func TestAnAccountFromTheEnvironmentIsNotRemembered(t *testing.T) {
+	test.NewTempApp(t)
+	t.Setenv("TESTEASE_AWS_PROFILE", "")
+	t.Setenv("TESTEASE_AWS_REGION", "eu-west-1")
+	cli := &fakeCLI{answers: map[string]string{"targets": standingJSON}}
+	v := newFakeTargets(t, cli)
+	v.profile.SetText("lab")
+	v.choose(placeEC2)
+	if got := fyne.CurrentApp().Preferences().String(prefCloudRegion); got != "" {
+		t.Errorf("remembered region %q from the environment", got)
+	}
+	if got := fyne.CurrentApp().Preferences().String(prefCloudProfile); got != "lab" {
+		t.Errorf("remembered profile %q", got)
 	}
 }

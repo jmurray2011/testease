@@ -16,6 +16,7 @@ package fakeexec
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -25,6 +26,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -178,12 +180,26 @@ func Program(t testing.TB, name, behaviour string, params map[string]string) str
 	if err := os.WriteFile(filepath.Join(dir, paramsFile), raw, 0o600); err != nil {
 		t.Fatalf("write fake %s parameters: %v", name, err)
 	}
-	warm := exec.Command(path)
-	warm.Env = append(os.Environ(), warmEnv+"=1")
-	if out, err := warm.CombinedOutput(); err != nil {
+	if out, err := warmUp(path); err != nil {
 		t.Fatalf("start the fake %s: %v: %s", name, err, out)
 	}
 	return path
+}
+
+// warmUp runs a fake once. On Linux, a parallel test that forks while the
+// shared copy is being written holds a write descriptor to it until that
+// child execs, and exec of the copy fails with "text file busy" meanwhile.
+// The window is a fork's length, so a short retry closes it.
+func warmUp(path string) ([]byte, error) {
+	for attempt := 0; ; attempt++ {
+		warm := exec.Command(path)
+		warm.Env = append(os.Environ(), warmEnv+"=1")
+		out, err := warm.CombinedOutput()
+		if err == nil || !errors.Is(err, syscall.ETXTBSY) || attempt == 50 {
+			return out, err
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 }
 
 // sharedBinary copies this test binary once per package run. Every fake is a

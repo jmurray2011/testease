@@ -41,7 +41,9 @@ type detailView struct {
 	timeline  *timelineChart
 	// search looks through the output tab showing; outScroll and errScroll
 	// hold stdout and stderr, so a match can be scrolled to.
-	search               *outputSearch
+	search *outputSearch
+	// trends follow each fact back through the scenario's earlier runs.
+	trends               map[factKey]factTrend
 	outScroll, errScroll *container.Scroll
 
 	meta, verdicts, targets, notes []string
@@ -141,6 +143,7 @@ func newDetailViewFrom(dir, backLabel string, back func()) (*detailView, error) 
 			v.tabs.Append(container.NewTabItem("Timeline", container.NewVScroll(container.NewPadded(v.timeline))))
 		}
 	}
+	v.trends = factTrends(d, earlierRuns(d))
 	v.search = newOutputSearch(v.shownOutput)
 	v.tabs.OnSelected = func(*container.TabItem) { v.search.apply() }
 	center := container.NewBorder(container.NewVBox(v.stepTitle, v.stepMeta, v.search.bar, widget.NewSeparator()), nil, nil, nil, v.tabs)
@@ -307,7 +310,11 @@ func (v *detailView) selectStep(i widget.ListItemID) {
 		val := widget.NewLabelWithStyle(value, fyne.TextAlignLeading, fyne.TextStyle{Monospace: true})
 		val.Selectable = true
 		val.Wrapping = fyne.TextWrapWord
-		v.facts.Add(container.NewBorder(nil, nil, container.NewGridWrap(fyne.NewSize(200, key.MinSize().Height), key), nil, val))
+		var trend fyne.CanvasObject = widget.NewLabel("")
+		if tr, ok := v.trends[factKey{s.Label, f.Key}]; ok && !looksSecret(f.Key) {
+			trend = trendView(tr)
+		}
+		v.facts.Add(container.NewBorder(nil, nil, container.NewGridWrap(fyne.NewSize(200, key.MinSize().Height), key), trend, val))
 	}
 	v.facts.Refresh()
 }

@@ -94,8 +94,10 @@ func (s *outputSearch) apply() {
 	g, _ := s.grid()
 	if g == nil {
 		s.found.SetText("")
+		s.bar.Hide()
 		return
 	}
+	s.bar.Show()
 	text := g.Text()
 	s.matches = findMatches(text, s.entry.Text)
 	s.at = 0

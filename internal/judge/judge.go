@@ -159,6 +159,19 @@ func shipped() []Judge {
 	return []Judge{Expect{}, Matrix{}, RestoreMatrix{}, ReleaseReadiness{}, WindowsUpgradeReadiness{}, Baseline{}, Compare{}}
 }
 
+// Passed is whether a verdict is in a shipped judge's pass set. Never invent
+// success: anything that is not one of the words a judge uses for "no worse
+// than before" is not a pass, including words no judge has yet. An external
+// judge's pass set is its caller's to say.
+func Passed(verdict string) bool {
+	switch verdict {
+	case Pass, Promote, Established, Restored, ReleaseReady:
+		return true
+	default:
+		return false
+	}
+}
+
 // ByName finds a shipped judge.
 func ByName(name string) (Judge, error) {
 	known := make([]string, 0, len(shipped()))

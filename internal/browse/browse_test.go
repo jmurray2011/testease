@@ -74,10 +74,15 @@ func installCheck(t *testing.T, runs string) string {
 
 func judged(t *testing.T, dir string, verdict, events string) {
 	t.Helper()
+	judgedBy(t, dir, "expect", verdict, events)
+}
+
+func judgedBy(t *testing.T, dir, name, verdict, events string) {
+	t.Helper()
 
 	if _, err := judge.Save(dir, judge.Verdict{
 		Schema:   judge.Schema,
-		Judge:    "expect",
+		Judge:    name,
 		Version:  "3",
 		JudgedAt: time.Date(2026, 11, 23, 17, 22, 0, 0, time.UTC),
 		Evidence: judge.Evidence{Events: events},
@@ -312,5 +317,36 @@ func TestARecordCarriesWhatItsReaderAndWriterHadToSay(t *testing.T) {
 	}
 	if len(got.Warnings) != 1 || got.Warnings[0].Message != "not a number" {
 		t.Errorf("warnings = %+v", got.Warnings)
+	}
+}
+
+// Whether a verdict passed is its judge's to say, by its pass set. A shipped
+// judge's set is known here; an external judge's is not, and is not guessed.
+func TestAVerdictSaysWhetherItIsInItsJudgesPassSet(t *testing.T) {
+	t.Parallel()
+
+	runs := t.TempDir()
+	dir := installCheck(t, runs)
+	events := eventsHash(t, dir)
+	judgedBy(t, dir, "expect", "regressed", events)
+	judgedBy(t, dir, "matrix", "pass", events)
+	judgedBy(t, dir, "site-policy", "pass", events)
+
+	got, err := browse.Open(dir)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	by := map[string]browse.Verdict{}
+	for _, v := range got.Verdicts {
+		by[v.Judge] = v
+	}
+	if v := by["expect"]; !v.Shipped || v.Passed {
+		t.Errorf("expect regressed = %+v, want shipped and not passed", v)
+	}
+	if v := by["matrix"]; !v.Shipped || !v.Passed {
+		t.Errorf("matrix pass = %+v, want shipped and passed", v)
+	}
+	if v := by["site-policy"]; v.Shipped || v.Passed {
+		t.Errorf("external judge = %+v, want its pass set left unknown", v)
 	}
 }

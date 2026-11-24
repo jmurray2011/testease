@@ -191,7 +191,8 @@ tests:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(body), store) || !strings.Contains(string(body), inputs) {
+	// As JSON writes them: a Windows path's backslashes are escaped there.
+	if !strings.Contains(string(body), jsonString(t, store)) || !strings.Contains(string(body), jsonString(t, inputs)) {
 		t.Fatalf("batch record omits resolved paths: %s", body)
 	}
 	snapshot, err := os.ReadFile(filepath.Join(result.Dir, "batch.yaml"))
@@ -201,6 +202,16 @@ tests:
 	if string(snapshot) != definition {
 		t.Fatalf("source snapshot changed: %s", snapshot)
 	}
+}
+
+// jsonString is s as it appears inside a JSON string, without the quotes.
+func jsonString(t *testing.T, s string) string {
+	t.Helper()
+	raw, err := json.Marshal(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(raw[1 : len(raw)-1])
 }
 
 func TestBatchRejectsAmbiguousOrInvalidPathBindings(t *testing.T) {

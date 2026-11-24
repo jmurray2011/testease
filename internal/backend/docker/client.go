@@ -468,7 +468,7 @@ func (s *Session) exec(ctx context.Context, args []string, stdin io.Reader, opt 
 	result := target.Result{Duration: time.Since(started)}
 
 	if err != nil {
-		rc, reported := codeOf(err)
+		rc, reported := codeOf(err, ctx.Err() != nil)
 		if !reported {
 			// Either docker itself did not run, or the process was killed
 			// rather than exiting. Neither is an exit code, and neither may be
@@ -574,7 +574,9 @@ func (c Client) Stream(ctx context.Context, stdout, stderr io.Writer, args ...st
 }
 
 // CodeOf reads a process's exit status, and says whether there was one.
-func CodeOf(err error) (rc int, reported bool) { return codeOf(err) }
+// killed is whether the context the process ran under had ended when it was
+// reaped.
+func CodeOf(err error, killed bool) (rc int, reported bool) { return codeOf(err, killed) }
 
 // LabelledNetworks lists every network this daemon holds that carries a label,
 // with the labels it carries. A network outlives the containers on it, so it is
@@ -695,7 +697,16 @@ func (c Client) Remove(ctx context.Context, name string) error {
 // than exited: there is no code, and -1 is how the standard library says so.
 // Passing that on as a status would put "no reading" and "a reading of -1" in
 // the same field, which is the confusion invariant 3 exists to prevent.
-func codeOf(err error) (rc int, reported bool) {
+//
+// Windows has no such -1: a process its context killed exits 1, the code a
+// real probe returns most often. The status cannot tell them apart, so the
+// caller says whether its context had ended by the time the process was
+// reaped. A process that exited by itself in the same instant reads as killed:
+// a reading lost is a gap, a kill recorded as a reading is a lie.
+func codeOf(err error, killed bool) (rc int, reported bool) {
+	if killed {
+		return -1, false
+	}
 	var exitErr *exec.ExitError
 	if !errors.As(err, &exitErr) {
 		return -1, false

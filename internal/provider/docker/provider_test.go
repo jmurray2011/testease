@@ -7,8 +7,6 @@ import (
 	"io"
 	"net/url"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -16,6 +14,7 @@ import (
 	backend "github.com/jmurray2011/testease/internal/backend/docker"
 	provider "github.com/jmurray2011/testease/internal/provider/docker"
 	"github.com/jmurray2011/testease/internal/target"
+	"github.com/jmurray2011/testease/internal/target/fakeexec"
 )
 
 // These need a daemon and an image already on it. They pull nothing: a test
@@ -318,19 +317,12 @@ func TestWithoutAnInstrumentATargetIsHonestlyNotAFingerprinter(t *testing.T) {
 func fakeInstrument(t *testing.T) provider.Instrument {
 	t.Helper()
 
-	dir := t.TempDir()
-	diff := filepath.Join(dir, "diff.sh")
-	body := "#!/bin/bash\nif cmp -s \"$1\" \"$2\"; then exit 0; fi\ndiff \"$1\" \"$2\"\nexit 1\n"
-	if err := os.WriteFile(diff, []byte(body), 0o755); err != nil {
-		t.Fatalf("write fake instrument: %v", err)
-	}
-	if _, err := exec.LookPath("bash"); err != nil {
-		t.Skipf("no bash here: %v", err)
-	}
+	// The diff runs on the runner: it is this test binary, so it runs wherever
+	// the tests do. Collect runs in the container.
 	return provider.Instrument{
 		Name:    "fake@1",
 		Collect: []string{"sh", "-c", "ls -1 /dev/shm 2>/dev/null | sort"},
-		Diff:    []string{diff},
+		Diff:    []string{fakeexec.Program(t, "diff", "instrument-diff", nil)},
 	}
 }
 

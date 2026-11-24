@@ -1,0 +1,412 @@
+package main
+
+import (
+	"errors"
+	"fmt"
+	"io"
+	"net/url"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+
+	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/layout"
+	"fyne.io/fyne/v2/storage"
+	"fyne.io/fyne/v2/theme"
+	"fyne.io/fyne/v2/widget"
+
+	"github.com/jmurray2011/testease/internal/browse"
+	"github.com/jmurray2011/testease/internal/record"
+)
+
+// outputLimit caps how much of a step's output is put on screen. A step can
+// print gigabytes; the tail is where the answer usually is, and the whole file
+// is one "Open folder" away.
+const outputLimit = 512 << 10
+
+// detailView is one record opened.
+type detailView struct {
+	d        browse.Detail
+	selected int
+
+	steps     *widget.List
+	stepTitle *widget.Label
+	stepMeta  *widget.Label
+	stdout    *widget.TextGrid
+	stderr    *widget.TextGrid
+	facts     *fyne.Container
+	factLines []string
+
+	meta, verdicts, targets, notes []string
+	content                        fyne.CanvasObject
+}
+
+func newDetailView(dir string, back func()) (*detailView, error) {
+	d, err := browse.Open(dir)
+	if err != nil {
+		return nil, err
+	}
+	v := &detailView{d: d, selected: -1}
+
+	// Header: where this is, what it measured, and how to get at the files.
+	backButton := widget.NewButtonWithIcon("Runs", theme.NavigateBackIcon(), back)
+	backButton.Importance = widget.LowImportance
+	id := widget.NewLabelWithStyle(d.RunID, fyne.TextAlignLeading, fyne.TextStyle{Monospace: true, Bold: true})
+	id.Selectable = true
+	status := newPill(statusOf(d.Run), statusKind(statusOf(d.Run)))
+	openFolder := widget.NewButtonWithIcon("Open folder", theme.FolderOpenIcon(), func() {
+		if u, err := url.Parse(storage.NewFileURI(d.Dir).String()); err == nil {
+			_ = fyne.CurrentApp().OpenURL(u)
+		}
+	})
+	top := container.NewHBox(backButton, widget.NewLabel("/"), id, container.NewCenter(status), layout.NewSpacer(), openFolder)
+
+	v.meta = metaParts(d)
+	metaLabel := widget.NewLabel(strings.Join(v.meta, "    "))
+	metaLabel.Importance = widget.LowImportance
+	metaLabel.Truncation = fyne.TextTruncateEllipsis
+	header := container.NewVBox(container.NewPadded(container.NewVBox(top, metaLabel)), widget.NewSeparator())
+
+	// Steps, on the left.
+	v.steps = widget.NewList(
+		func() int { return len(d.StepList) },
+		func() fyne.CanvasObject {
+			seq := widget.NewLabelWithStyle("", fyne.TextAlignTrailing, fyne.TextStyle{Monospace: true})
+			seq.Importance = widget.LowImportance
+			label := widget.NewLabel("")
+			label.Truncation = fyne.TextTruncateEllipsis
+			return container.NewBorder(nil, nil, seq, container.NewCenter(newPill("", pillNeutral)), label)
+		},
+		func(i widget.ListItemID, o fyne.CanvasObject) {
+			s := d.StepList[i]
+			row := o.(*fyne.Container)
+			row.Objects[0].(*widget.Label).SetText(s.Label)
+			row.Objects[1].(*widget.Label).SetText(fmt.Sprint(s.Seq))
+			p := row.Objects[2].(*fyne.Container).Objects[0].(*pill)
+			p.Set(stepStatus(s), statusKind(s.Status))
+		},
+	)
+	v.steps.OnSelected = v.selectStep
+	stepsHeader := widget.NewLabel(stepsHeading(d))
+	stepsHeader.Importance = widget.LowImportance
+	left := container.NewBorder(stepsHeader, nil, nil, nil, v.steps)
+
+	// The selected step, in the middle.
+	v.stepTitle = widget.NewLabelWithStyle("", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	v.stepMeta = widget.NewLabel("")
+	v.stepMeta.Importance = widget.LowImportance
+	v.stdout = widget.NewTextGrid()
+	v.stderr = widget.NewTextGrid()
+	v.facts = container.NewVBox()
+	tabs := container.NewAppTabs(
+		container.NewTabItem("stdout", container.NewPadded(v.stdout)),
+		container.NewTabItem("stderr", container.NewPadded(v.stderr)),
+		container.NewTabItem("Facts", container.NewVScroll(container.NewPadded(v.facts))),
+	)
+	center := container.NewBorder(container.NewVBox(container.NewHBox(v.stepTitle, v.stepMeta), widget.NewSeparator()), nil, nil, nil, tabs)
+
+	// What judges, targets and readers said, on the right.
+	v.verdicts = verdictParts(d)
+	v.targets = targetParts(d)
+	v.notes = noteParts(d)
+	right := container.NewVScroll(container.NewPadded(container.NewVBox(
+		section("Verdicts", verdictCards(d)),
+		section("Target", lines(v.targets)),
+		section("Read notes", lines(v.notes)),
+	)))
+
+	if len(d.StepList) == 0 {
+		v.stepTitle.SetText("This record has no steps.")
+	} else {
+		v.steps.Select(firstOfInterest(d.StepList))
+	}
+
+	inner := container.NewHSplit(center, right)
+	inner.Offset = 0.7
+	outer := container.NewHSplit(left, inner)
+	outer.Offset = 0.24
+	v.content = container.NewBorder(header, nil, nil, nil, outer)
+	return v, nil
+}
+
+// firstOfInterest is the step a person opening a record wants first: the first
+// one that did not measure cleanly, or the first step when all of them did.
+func firstOfInterest(steps []browse.Step) int {
+	for i, s := range steps {
+		if s.Status != string(record.StatusMeasured) {
+			return i
+		}
+	}
+	return 0
+}
+
+func stepStatus(s browse.Step) string {
+	if s.Status == "" {
+		return "no outcome"
+	}
+	return s.Status
+}
+
+func (v *detailView) selectStep(i widget.ListItemID) {
+	if i < 0 || i >= len(v.d.StepList) {
+		return
+	}
+	v.selected = i
+	s := v.d.StepList[i]
+	v.stepTitle.SetText(fmt.Sprintf("%d · %s", s.Seq, s.Label))
+
+	var parts []string
+	if s.RC != nil {
+		parts = append(parts, fmt.Sprintf("rc %d", *s.RC), fmt.Sprintf("%.1f s", s.DurationS))
+	} else {
+		parts = append(parts, "no outcome recorded")
+	}
+	parts = append(parts, "host "+s.Host)
+	if s.Probe != "" {
+		parts = append(parts, s.Probe)
+	}
+	v.stepMeta.SetText(strings.Join(parts, " · "))
+
+	v.stdout.SetText(v.output(s.Stdout, "stdout"))
+	v.stderr.SetText(v.output(s.Stderr, "stderr"))
+
+	v.factLines = v.factLines[:0]
+	v.facts.RemoveAll()
+	if len(s.Facts) == 0 {
+		v.facts.Add(widget.NewLabel("This step recorded no facts."))
+	}
+	for _, f := range s.Facts {
+		value := ""
+		switch {
+		case f.Value != nil:
+			value = *f.Value
+		case f.Error != "":
+			value = "no reading: " + f.Error
+		default:
+			value = "no reading"
+		}
+		v.factLines = append(v.factLines, f.Key+" "+value)
+		key := widget.NewLabelWithStyle(f.Key, fyne.TextAlignLeading, fyne.TextStyle{Monospace: true})
+		key.Importance = widget.LowImportance
+		val := widget.NewLabelWithStyle(value, fyne.TextAlignLeading, fyne.TextStyle{Monospace: true})
+		val.Selectable = true
+		val.Wrapping = fyne.TextWrapWord
+		v.facts.Add(container.NewBorder(nil, nil, container.NewGridWrap(fyne.NewSize(200, key.MinSize().Height), key), nil, val))
+	}
+	v.facts.Refresh()
+}
+
+// output reads one of a step's output files for display. Records travel - they
+// are published and read on machines that did not write them - so a path that
+// leaves the record is not followed, whatever the record says.
+func (v *detailView) output(rel, stream string) string {
+	if rel == "" {
+		return fmt.Sprintf("(this step recorded no %s)", stream)
+	}
+	if !filepath.IsLocal(filepath.FromSlash(rel)) {
+		return fmt.Sprintf("(the record names %s as %q, which is outside the record; it is not followed)", stream, rel)
+	}
+	path := filepath.Join(v.d.Dir, filepath.FromSlash(rel))
+	info, err := os.Stat(path)
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		return fmt.Sprintf("(the record names %s, but that file is not in the record)", rel)
+	case err != nil:
+		return fmt.Sprintf("(could not read %s: %v)", rel, err)
+	case info.Size() == 0:
+		return "(empty)"
+	}
+	return readTail(path, outputLimit)
+}
+
+// readTail reads the end of a file, from the first whole line inside the last
+// limit bytes, and says when it has left the start out.
+func readTail(path string, limit int64) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return fmt.Sprintf("(could not read: %v)", err)
+	}
+	defer func() { _ = f.Close() }()
+	info, err := f.Stat()
+	if err != nil {
+		return fmt.Sprintf("(could not read: %v)", err)
+	}
+	size := info.Size()
+	if size <= limit {
+		body, err := io.ReadAll(f)
+		if err != nil {
+			return fmt.Sprintf("(could not read: %v)", err)
+		}
+		return string(body)
+	}
+	if _, err := f.Seek(size-limit, io.SeekStart); err != nil {
+		return fmt.Sprintf("(could not read: %v)", err)
+	}
+	body, err := io.ReadAll(f)
+	if err != nil {
+		return fmt.Sprintf("(could not read: %v)", err)
+	}
+	if nl := strings.IndexByte(string(body), '\n'); nl >= 0 && nl+1 < len(body) {
+		body = body[nl+1:]
+	}
+	return fmt.Sprintf("… showing the last %s of %s; the whole file is in the record\n%s",
+		byteSize(int64(len(body))), byteSize(size), body)
+}
+
+func byteSize(n int64) string {
+	switch {
+	case n >= 1<<20:
+		return fmt.Sprintf("%.1f MB", float64(n)/(1<<20))
+	case n >= 1<<10:
+		return fmt.Sprintf("%.1f KB", float64(n)/(1<<10))
+	default:
+		return fmt.Sprintf("%d bytes", n)
+	}
+}
+
+func stepsHeading(d browse.Detail) string {
+	hosts := map[string]bool{}
+	for _, s := range d.StepList {
+		hosts[s.Host] = true
+	}
+	if len(hosts) == 1 {
+		for h := range hosts {
+			return "Steps on host " + h
+		}
+	}
+	return "Steps"
+}
+
+func metaParts(d browse.Detail) []string {
+	parts := []string{"Scenario " + orDash(d.Scenario)}
+	if len(d.Params) > 0 {
+		keys := make([]string, 0, len(d.Params))
+		for k := range d.Params {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		params := make([]string, len(keys))
+		for i, k := range keys {
+			params[i] = k + "=" + d.Params[k]
+		}
+		parts = append(parts, "Params "+strings.Join(params, " "))
+	}
+	if d.Runner.User != "" || d.Runner.Hostname != "" {
+		parts = append(parts, "Runner "+d.Runner.User+"@"+d.Runner.Hostname)
+	}
+	if d.Tool.Version != "" {
+		parts = append(parts, "Tool "+d.Tool.Version)
+	}
+	parts = append(parts, "Events "+shortHash(d.EventsHash))
+	return parts
+}
+
+func shortHash(h string) string {
+	const prefix = "sha256:"
+	if !strings.HasPrefix(h, prefix) || len(h) < len(prefix)+12 {
+		return orDash(h)
+	}
+	digest := h[len(prefix):]
+	return prefix + digest[:4] + "…" + digest[len(digest)-4:]
+}
+
+func orDash(s string) string {
+	if s == "" {
+		return "—"
+	}
+	return s
+}
+
+func verdictParts(d browse.Detail) []string {
+	if len(d.Verdicts) == 0 {
+		return []string{"Not judged yet. A run has no verdict until a judge reads it."}
+	}
+	var out []string
+	for _, v := range d.Verdicts {
+		out = append(out, verdictName(v)+" "+v.Verdict+" "+verdictProvenance(v))
+	}
+	return out
+}
+
+func verdictProvenance(v browse.Verdict) string {
+	when := v.JudgedAt.UTC().Format("2 Jan 2006 15:04 UTC")
+	if v.Current {
+		return "Judged " + when + " against these events."
+	}
+	return "Judged " + when + " over earlier events; the record's events have changed since, so this is not its verdict."
+}
+
+func verdictCards(d browse.Detail) fyne.CanvasObject {
+	if len(d.Verdicts) == 0 {
+		return lines(verdictParts(d))
+	}
+	box := container.NewVBox()
+	for _, v := range d.Verdicts {
+		name := widget.NewLabelWithStyle(verdictName(v), fyne.TextAlignLeading, fyne.TextStyle{Monospace: true})
+		when := widget.NewLabel(verdictProvenance(v))
+		when.Importance = widget.LowImportance
+		when.Wrapping = fyne.TextWrapWord
+		box.Add(container.NewVBox(
+			container.NewBorder(nil, nil, name, container.NewCenter(newPill(v.Verdict, verdictKind(v)))),
+			when,
+		))
+	}
+	return box
+}
+
+func targetParts(d browse.Detail) []string {
+	fates := map[string]string{}
+	for _, t := range d.Targets {
+		fates[t.Host] = t.Fate
+	}
+	var out []string
+	for _, h := range d.Hosts {
+		ref := ""
+		if r, ok := h.Resolved["ref"]; ok {
+			ref = fmt.Sprint(r)
+		}
+		out = append(out, strings.TrimSpace(h.Host+" "+ref)+" · "+fateText(fates[h.Host]))
+	}
+	if len(out) == 0 {
+		return []string{"No target was resolved."}
+	}
+	return out
+}
+
+func noteParts(d browse.Detail) []string {
+	var out []string
+	for _, r := range d.Reports {
+		out = append(out, r.About+": "+r.Message)
+	}
+	for _, w := range d.Warnings {
+		out = append(out, w.About+": "+w.Message+" (recorded "+fmt.Sprintf("%q", w.Recorded)+")")
+	}
+	if len(out) == 0 {
+		return []string{"None. The record read cleanly; no repairs were needed."}
+	}
+	return out
+}
+
+func section(title string, body fyne.CanvasObject) fyne.CanvasObject {
+	heading := widget.NewLabelWithStyle(title, fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	return container.NewVBox(heading, body, widget.NewSeparator())
+}
+
+func lines(texts []string) fyne.CanvasObject {
+	box := container.NewVBox()
+	for _, t := range texts {
+		l := widget.NewLabel(t)
+		l.Wrapping = fyne.TextWrapWord
+		l.Selectable = true
+		box.Add(l)
+	}
+	return box
+}
+
+func (v *detailView) metaText() string     { return strings.Join(v.meta, "\n") }
+func (v *detailView) verdictsText() string { return strings.Join(v.verdicts, "\n") }
+func (v *detailView) targetsText() string  { return strings.Join(v.targets, "\n") }
+func (v *detailView) notesText() string    { return strings.Join(v.notes, "\n") }
+func (v *detailView) factsText() string    { return strings.Join(v.factLines, "\n") }

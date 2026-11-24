@@ -1,7 +1,9 @@
 package judge_test
 
 import (
+	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -55,17 +57,42 @@ func recordWithReport(t *testing.T, body string, facts map[string]string) *recor
 }
 
 // sameOrDiffer is a comparator in the shape the judge asks for: exit 0 when the
-// two files match, non-zero when they do not.
+// two files match, non-zero when they do not. It is this test binary, running
+// only TestComparatorHelper, so it runs wherever the tests do.
 func sameOrDiffer(t *testing.T) []string {
 	t.Helper()
+	return []string{os.Args[0], "-test.run=^TestComparatorHelper$", "--", comparatorMarker}
+}
 
-	dir := t.TempDir()
-	path := filepath.Join(dir, "compare.sh")
-	body := "#!/bin/bash\nif cmp -s \"$1\" \"$2\"; then exit 0; fi\necho 'the report differs from the baseline'\nexit 1\n"
-	if err := os.WriteFile(path, []byte(body), 0o755); err != nil {
-		t.Fatalf("write comparator: %v", err)
+const comparatorMarker = "testease-comparator"
+
+// TestComparatorHelper is the comparator sameOrDiffer names. Run as an
+// ordinary test it finds no marker and does nothing.
+func TestComparatorHelper(t *testing.T) {
+	files := helperArgs(comparatorMarker)
+	if files == nil {
+		return
 	}
-	return []string{path}
+	if len(files) == 2 {
+		a, errA := os.ReadFile(files[0])
+		b, errB := os.ReadFile(files[1])
+		if errA == nil && errB == nil && bytes.Equal(a, b) {
+			os.Exit(0)
+		}
+	}
+	fmt.Println("the report differs from the baseline")
+	os.Exit(1)
+}
+
+// helperArgs is what follows marker after "--" on this process's command
+// line, or nil when this is not that helper.
+func helperArgs(marker string) []string {
+	for i, arg := range os.Args {
+		if arg == "--" && i+1 < len(os.Args) && os.Args[i+1] == marker {
+			return os.Args[i+2:]
+		}
+	}
+	return nil
 }
 
 func TestAFirstRunEstablishesTheBaseline(t *testing.T) {

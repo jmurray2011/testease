@@ -150,7 +150,6 @@ func TestARowSaysWhatTheRunMeasuredAndWhatBecameOfItsTarget(t *testing.T) {
 	v := newRunsView(runs, func(string) {})
 	want := map[int]string{
 		colRun:      "install-check-20261123T171533Z",
-		colScenario: "install-check",
 		colMeasured: "2 steps",
 		colStatus:   "probe-fail",
 		colVerdict:  "expect@3 regressed",
@@ -212,7 +211,7 @@ func TestSelectingARowOpensThatRecord(t *testing.T) {
 
 	var opened string
 	v := newRunsView(runs, func(d string) { opened = d })
-	v.table.Select(widget.TableCellID{Row: 0, Col: colScenario})
+	v.table.Select(widget.TableCellID{Row: 0, Col: colMeasured})
 	if opened != dir {
 		t.Errorf("opened %q, want %q", opened, dir)
 	}
@@ -302,5 +301,24 @@ func TestTheRunColumnFitsTheLongestRunID(t *testing.T) {
 	need := fyne.MeasureText(long, theme.TextSize(), fyne.TextStyle{Monospace: true}).Width
 	if v.widths[colRun] < need {
 		t.Errorf("run column is %.0f wide, want at least %.0f for %s", v.widths[colRun], need, long)
+	}
+}
+
+// The run id starts with its scenario by contract, so the listing does not
+// spend a column repeating it, and every column fits beside the sections in
+// the window the app opens at.
+func TestEveryColumnFitsTheWindowTheAppOpensAt(t *testing.T) {
+	test.NewTempApp(t)
+
+	runs := t.TempDir()
+	installCheck(t, runs, "vtdocs-sysadmin-sso-landing-20261121T083545Z")
+
+	v := newRunsView(runs, func(string) {})
+	total := float32(0)
+	for _, w := range v.widths {
+		total += w
+	}
+	if room := openingSize.Width - sidebarWidth; total > room {
+		t.Errorf("columns need %.0f, the window has %.0f beside the sections", total, room)
 	}
 }

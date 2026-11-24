@@ -1,11 +1,13 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/test"
 
 	"github.com/jmurray2011/testease/internal/record"
@@ -158,5 +160,48 @@ func TestLongOutputShowsItsTailAndSaysSo(t *testing.T) {
 	got := readTail(path, 16)
 	if !strings.HasSuffix(got, "the end\n") || !strings.Contains(got, "showing the last") {
 		t.Errorf("tail = %q", got)
+	}
+}
+
+// Nothing a record holds may set the window's width. A drive step's output can
+// carry lines thousands of characters long, and labels, probe paths and params
+// come from scenarios nobody here wrote; the window must scroll or truncate
+// rather than grow past the screen.
+func TestALongRecordDoesNotWidenTheWindow(t *testing.T) {
+	test.NewTempApp(t)
+
+	runs := t.TempDir()
+	long := strings.Repeat("a-very-long-unbroken-token-", 60)
+	dir := recorded(t, runs, "wide-20261101T000000Z", func(w *record.Writer) {
+		params := map[string]string{}
+		for i := 0; i < 20; i++ {
+			params[fmt.Sprintf("param%02d", i)] = long[:60]
+		}
+		emit(t, w, record.KindRunStarted, 0, record.RunStarted{
+			RunID: "wide-20261101T000000Z", Scenario: record.ScenarioRef{Name: "wide"}, Params: params,
+		})
+		emit(t, w, record.KindTargetResolved, 0, record.TargetResolved{Host: "box", Resolved: map[string]any{"ref": long}})
+		out, _ := record.StepPaths(1, "drive")
+		emit(t, w, record.KindStepStarted, 1, record.StepStarted{Label: long, Host: "box", Probe: "drive:" + long})
+		emit(t, w, record.KindOperation, 1, record.Operation{RC: 0, Stdout: out, Status: record.StatusMeasured})
+		emit(t, w, record.KindFact, 1, record.Fact{Key: long, Error: long})
+	})
+	out, _ := record.StepPaths(1, "drive")
+	if err := os.MkdirAll(filepath.Join(dir, record.StepsDir), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, filepath.FromSlash(out)), []byte(long+long+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	v, err := newDetailView(dir, func() {})
+	if err != nil {
+		t.Fatalf("newDetailView: %v", err)
+	}
+	w := test.NewWindow(v.content)
+	defer w.Close()
+	w.Resize(fyne.NewSize(1200, 800))
+	if got := v.content.MinSize().Width; got > 1000 {
+		t.Errorf("the record asks for a window %.0f wide, want it to fit a 1000-wide screen", got)
 	}
 }

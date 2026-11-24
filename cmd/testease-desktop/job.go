@@ -66,6 +66,8 @@ type progressLine struct {
 	Event   string  `json:"event"`
 	RunID   string  `json:"run_id"`
 	Cell    string  `json:"cell"`
+	Host    string  `json:"host"`
+	Name    string  `json:"name"`
 	Step    int     `json:"step"`
 	Label   string  `json:"label"`
 	Status  string  `json:"status"`
@@ -150,17 +152,49 @@ func (j *job) line(text string) {
 	if p.RunID != "" && p.Cell == "" {
 		j.runID = p.RunID
 	}
+	where := ""
+	if p.Cell != "" {
+		where = p.Cell + ": "
+	}
 	switch p.Event {
 	case "step-started", "step-running":
 		s := j.step(p)
-		s.Label, s.Running = p.Label, true
+		s.Running = true
+		// The label rides step-started; later lines may leave it out.
+		if p.Label != "" {
+			s.Label = p.Label
+		}
+		if p.Event == "step-started" {
+			j.appendLog(fmt.Sprintf("%sstep %d started: %s", where, p.Step, s.Label))
+		}
 	case "step-measured":
 		s := j.step(p)
-		s.Label, s.Status, s.RC, s.Seconds, s.Running = p.Label, p.Status, p.RC, p.Seconds, false
+		if p.Label != "" {
+			s.Label = p.Label
+		}
+		s.Status, s.RC, s.Seconds, s.Running = p.Status, p.RC, p.Seconds, false
+		line := fmt.Sprintf("%sstep %d %s", where, p.Step, orText(p.Status, "finished"))
+		if p.RC != nil {
+			line += fmt.Sprintf(", rc %d", *p.RC)
+		}
+		j.appendLog(line + fmt.Sprintf(", %.1f s", p.Seconds))
+	case "run-started":
+		j.appendLog(where + "run started: " + p.RunID)
+	case "target-resolved":
+		j.appendLog(where + "target resolved for host " + p.Host)
+	case "cell-started":
+		j.appendLog(where + "cell started")
+	case "cell-finished":
+		j.appendLog(where + "cell finished: " + p.Status)
+	case "media-stage-started":
+		j.appendLog(fmt.Sprintf("%sstaging %s onto %s", where, p.Name, p.Host))
+	case "media-staged":
+		j.appendLog(fmt.Sprintf("%sstaged %s onto %s, %.1f s", where, p.Name, p.Host, p.Seconds))
 	case "run-finished":
 		if p.Cell == "" {
 			j.status = p.Status
 		}
+		j.appendLog(where + "run finished: " + p.Status)
 	}
 }
 

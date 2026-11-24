@@ -94,7 +94,7 @@ func (s *shell) startJob(title string, args []string) {
 	}
 	var v *jobView
 	v = newJobView(title, args, s.dir, s.showActivity, func(rec string) {
-		s.openRecord(rec, "Activity", func() { s.highlight(sectionActivity); s.show(v, v.content) })
+		s.openRecord(rec, title, func() { s.highlight(sectionActivity); s.show(v, v.content) })
 	})
 	s.jobs = append(s.jobs, v)
 	s.highlight(sectionActivity)

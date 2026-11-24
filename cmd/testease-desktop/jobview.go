@@ -106,6 +106,8 @@ func (v *jobView) render() {
 	v.status.Set(text, kind)
 	switch {
 	case v.s.Done:
+		v.stop.SetText("Stop")
+		v.stop.Importance = widget.MediumImportance
 		v.stop.Disable()
 	case v.s.Stopping:
 		v.stop.SetText("Kill")

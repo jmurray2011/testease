@@ -139,10 +139,18 @@ func Load(path string) (*Definition, error) {
 }
 
 func resolvePathBinding(batchDir, value string) (string, error) {
-	if strings.TrimSpace(value) == "" || filepath.IsAbs(value) {
+	if strings.TrimSpace(value) == "" || !relative(value) {
 		return "", fmt.Errorf("path %q must be a nonempty relative path", value)
 	}
 	return filepath.Join(batchDir, value), nil
+}
+
+// relative says whether a path is relative to the directory it is joined to.
+// On Windows a path can be neither absolute nor relative: /media is rooted on
+// the current drive and C:media is relative to that drive's working directory,
+// and joining either to the batch directory would name somewhere it is not.
+func relative(value string) bool {
+	return !filepath.IsAbs(value) && filepath.VolumeName(value) == "" && !os.IsPathSeparator(value[0])
 }
 
 func testName(test Test) string {

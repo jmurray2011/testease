@@ -58,6 +58,21 @@ linters:
             - pkg: github.com/jmurray2011/testease/internal
               desc: internal/publish imports internal/record only
 
+        # browse is a projection for people: it reads records and the verdicts
+        # judges wrote, and concludes nothing of its own.
+        browse-reads-records-and-verdicts:
+          list-mode: lax
+          files:
+            - "**/internal/browse/**"
+          allow:
+            - $gostd
+            - github.com/jmurray2011/testease/internal/record
+            - github.com/jmurray2011/testease/internal/judge
+            - github.com/jmurray2011/testease/internal/browse
+          deny:
+            - pkg: github.com/jmurray2011/testease/internal
+              desc: internal/browse reads records and verdicts only
+
         # doctor reads declarations, verifies their external input bindings,
         # and asks a daemon. It never dials a target or writes a record.
         doctor-reads-declarations-only:

@@ -1,15 +1,14 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
-	"sort"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 
-	"github.com/jmurray2011/testease/internal/record"
+	"github.com/jmurray2011/testease/internal/browse"
 )
 
 func runsCmd() *cobra.Command {
@@ -28,21 +27,11 @@ func runsCmd() *cobra.Command {
 	return cmd
 }
 
-// runEntry is one record, as much of it as a listing needs.
-type runEntry struct {
-	RunID    string `json:"run"`
-	Scenario string `json:"scenario"`
-	Steps    int    `json:"steps"`
-	Cells    int    `json:"cells,omitempty"`
-	Status   string `json:"status"`
-	Dir      string `json:"dir"`
-}
-
 func doRuns(cmd *cobra.Command, _ []string) error {
 	dir := flagString(cmd, "runs-dir")
-	entries, err := os.ReadDir(dir)
+	all, err := browse.List(dir)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, os.ErrNotExist) {
 			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "no runs directory at %s\n", dir)
 			return nil
 		}
@@ -50,28 +39,18 @@ func doRuns(cmd *cobra.Command, _ []string) error {
 	}
 
 	only := flagString(cmd, "scenario")
-	found := make([]runEntry, 0, len(entries))
-	for _, e := range entries {
-		if !e.IsDir() {
+	found := make([]browse.Run, 0, len(all))
+	for _, r := range all {
+		if only != "" && r.Scenario != only {
 			continue
 		}
-		entry, ok := readEntry(filepath.Join(dir, e.Name()))
-		if !ok {
-			continue
-		}
-		if only != "" && entry.Scenario != only {
-			continue
-		}
-		found = append(found, entry)
+		found = append(found, r)
 	}
-	// By run id, which is scenario then an ISO timestamp - so a scenario's
-	// records fall into the order they were taken.
-	sort.Slice(found, func(i, j int) bool { return found[i].RunID < found[j].RunID })
 
 	if flagString(cmd, "output") == "json" {
 		return writeJSON(cmd, struct {
-			Root string     `json:"root"`
-			Runs []runEntry `json:"runs"`
+			Root string       `json:"root"`
+			Runs []browse.Run `json:"runs"`
 		}{Root: dir, Runs: found})
 	}
 
@@ -98,46 +77,4 @@ func doRuns(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("list runs: %w", err)
 	}
 	return nil
-}
-
-// readEntry reads one record for what it says about itself. A directory that
-// holds no events file is not a record and is passed over rather than guessed
-// at; a record that will not parse is listed as unreadable, because a listing
-// that silently skipped one would be the shortest way to lose evidence.
-func readEntry(dir string) (runEntry, bool) {
-	if _, err := os.Stat(filepath.Join(dir, record.EventsFile)); err != nil {
-		return runEntry{}, false
-	}
-	entry := runEntry{RunID: filepath.Base(dir), Dir: dir, Status: "unreadable"}
-
-	rec, err := record.Read(dir)
-	if err != nil {
-		return entry, true
-	}
-
-	// The attempt that stands, the same one every projection reads.
-	latest := rec.Latest()
-	for _, e := range latest.Events {
-		switch e.Kind {
-		case record.KindRunStarted:
-			if started, err := record.Decode[record.RunStarted](e); err == nil {
-				entry.Scenario = started.Scenario.Name
-			}
-		case record.KindStepStarted:
-			entry.Steps++
-		case record.KindCellStarted:
-			entry.Cells++
-		}
-	}
-
-	entry.Status = string(record.StatusUnfinished)
-	for _, e := range latest.Events {
-		if e.Kind != record.KindRunFinished {
-			continue
-		}
-		if finished, err := record.Decode[record.RunFinished](e); err == nil {
-			entry.Status = string(finished.Status)
-		}
-	}
-	return entry, true
 }

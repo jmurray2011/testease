@@ -23,6 +23,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jmurray2011/testease/internal/backend/private"
 	"github.com/jmurray2011/testease/internal/inputbundle"
 	"github.com/jmurray2011/testease/internal/record"
 	"github.com/jmurray2011/testease/internal/runnerid"
@@ -348,10 +349,10 @@ func (r *run) prepareSecretFiles() error {
 	if r.cell != "" {
 		dir = filepath.Join(parent, r.cell)
 	}
-	if err := os.MkdirAll(filepath.Dir(dir), 0o700); err != nil {
+	if err := private.MkdirAll(filepath.Dir(dir)); err != nil {
 		return &PreconditionError{Message: "make room for secret files: " + err.Error()}
 	}
-	if err := os.Mkdir(dir, 0o700); err != nil {
+	if err := private.Mkdir(dir); err != nil {
 		if errors.Is(err, fs.ErrExist) {
 			return &PreconditionError{
 				Message: fmt.Sprintf("secret workspace %s already exists; refusing to reuse bytes from an earlier process", dir),

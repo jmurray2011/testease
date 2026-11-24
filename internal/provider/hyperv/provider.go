@@ -19,6 +19,7 @@ import (
 
 	backend "github.com/jmurray2011/testease/internal/backend/docker"
 	oneshot "github.com/jmurray2011/testease/internal/backend/hyperv"
+	"github.com/jmurray2011/testease/internal/backend/private"
 	"github.com/jmurray2011/testease/internal/target"
 )
 
@@ -185,10 +186,10 @@ func (c *cell) prepareCarryScratch() error {
 	if c.provider.opt.ScratchRoot == "" {
 		return fmt.Errorf("retain carry: no run-owned scratch root was configured")
 	}
-	if err := os.MkdirAll(c.provider.opt.ScratchRoot, 0o700); err != nil {
+	if err := private.MkdirAll(c.provider.opt.ScratchRoot); err != nil {
 		return fmt.Errorf("make room for carry scratch: %w", err)
 	}
-	dir, err := os.MkdirTemp(c.provider.opt.ScratchRoot, "carry-")
+	dir, err := private.MkdirTemp(c.provider.opt.ScratchRoot, "carry-")
 	if err != nil {
 		return fmt.Errorf("create carry scratch: %w", err)
 	}

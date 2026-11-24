@@ -27,6 +27,10 @@ func TestAKilledProcessReportsNoCode(t *testing.T) {
 	// the runner the step was measured - so a probe the backstop killed lands
 	// in the record as `rc=-1 status=measured`, which is the tool claiming a
 	// measurement nobody took.
+	//
+	// Windows has no -1: a process its context killed exits 1, which is also
+	// the commonest code a real probe returns. Only the caller knows it killed
+	// it, so the caller says so.
 	sleeper := fakeExecutable(t, "sleep", nil)
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
@@ -36,7 +40,7 @@ func TestAKilledProcessReportsNoCode(t *testing.T) {
 		t.Fatal("the process was not killed, so this tests nothing")
 	}
 
-	rc, reported := codeOf(err)
+	rc, reported := codeOf(err, ctx.Err() != nil)
 	if reported {
 		t.Errorf("a killed process reported a code of %d", rc)
 	}
@@ -45,10 +49,24 @@ func TestAKilledProcessReportsNoCode(t *testing.T) {
 func TestAnOrdinaryFailureKeepsItsCode(t *testing.T) {
 	t.Parallel()
 
-	err := exec.Command(fakeExecutable(t, "exit-3", nil)).Run()
-	rc, reported := codeOf(err)
+	ctx := t.Context()
+	err := exec.CommandContext(ctx, fakeExecutable(t, "exit-3", nil)).Run()
+	rc, reported := codeOf(err, ctx.Err() != nil)
 	if !reported || rc != 3 {
 		t.Errorf("rc = %d reported = %v, want 3 and true", rc, reported)
+	}
+}
+
+// The code a killed process leaves on Windows is a real reading when nothing
+// killed it: a probe that exits 1 under a live context is measured as 1.
+func TestAnExitOfOneUnderALiveContextIsMeasured(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	err := exec.CommandContext(ctx, fakeExecutable(t, "exit-1", nil)).Run()
+	rc, reported := codeOf(err, ctx.Err() != nil)
+	if !reported || rc != 1 {
+		t.Errorf("rc = %d reported = %v, want 1 and true", rc, reported)
 	}
 }
 
@@ -59,6 +77,7 @@ func TestAnOrdinaryFailureKeepsItsCode(t *testing.T) {
 var fakeBehaviours = map[string]fakeBehaviour{
 	"sleep":                    func(fakeCall) int { time.Sleep(5 * time.Second); return 0 },
 	"exit-3":                   func(fakeCall) int { return 3 },
+	"exit-1":                   func(fakeCall) int { return 1 },
 	"exec-fails-in-docker":     fakeExecFailsInDocker,
 	"exec-on-dead-container":   fakeExecOnDeadContainer,
 	"exec-on-live-container":   fakeExecOnLiveContainer,

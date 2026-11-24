@@ -237,10 +237,9 @@ func verdicts(dir, events string) []Verdict {
 			continue
 		}
 		_, unknown := judge.ByName(v.Judge)
-		shipped := unknown == nil
 		found = append(found, Verdict{
-			Shipped:  shipped,
-			Passed:   shipped && judge.Passed(v.Verdict),
+			Shipped:  unknown == nil,
+			Passed:   passedByShipped(v.Judge, v.Verdict),
 			Judge:    v.Judge,
 			Version:  v.Version,
 			Verdict:  v.Verdict,
@@ -255,4 +254,14 @@ func verdicts(dir, events string) []Verdict {
 		return found[i].Version < found[j].Version
 	})
 	return found
+}
+
+// passedByShipped is whether a verdict is in its judge's pass set, for a judge
+// this testease ships. An external judge's pass set is not known here, so its
+// verdicts are never called passing.
+func passedByShipped(name, verdict string) bool {
+	if _, err := judge.ByName(name); err != nil {
+		return false
+	}
+	return judge.Passed(verdict)
 }

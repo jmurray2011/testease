@@ -57,9 +57,9 @@ type runsView struct {
 	choosing bool
 	now      func() time.Time
 	count    *widget.Label
-	message *widget.Label
-	table   *widget.Table
-	content fyne.CanvasObject
+	message  *widget.Label
+	table    *widget.Table
+	content  fyne.CanvasObject
 }
 
 func newRunsView(dir string, onOpen func(dir string)) *runsView {

@@ -116,7 +116,29 @@ func (s *shell) startJob(title string, args []string) *jobView {
 		return v
 	}
 	v.attach(j)
+	s.countJobs()
+	go func() {
+		j.wait()
+		s.onUI(func() {
+			v.refresh()
+			s.finished(v)
+		})
+	}()
 	return v
+}
+
+// finished tells a person who has gone elsewhere that a job ended.
+func (s *shell) finished(v *jobView) {
+	s.countJobs()
+	if s.background && s.notify != nil {
+		s.notify(v.title, doneText(v))
+	}
+}
+
+// doneText is how a job ended, as a notification says it.
+func doneText(v *jobView) string {
+	text, _ := v.statusText()
+	return "Finished: " + text
 }
 
 func (s *shell) showActivity() {

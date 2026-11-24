@@ -93,7 +93,7 @@ func (s *shell) startJob(title string, args []string) {
 		return
 	}
 	var v *jobView
-	v = newJobView(title, args, s.dir, s.showActivity, func(rec string) {
+	v = newJobView(title, args, s.dir, s.showActivity, s.showTargets, func(rec string) {
 		s.openRecord(rec, title, func() { s.highlight(sectionActivity); s.show(v, v.content) })
 	})
 	s.jobs = append(s.jobs, v)
@@ -164,4 +164,21 @@ func (s *shell) quit() {
 			fyne.Do(s.window.Close)
 		}()
 	}, s.window)
+}
+
+func (s *shell) showTargets() {
+	s.highlight(sectionTargets)
+	var v *targetsView
+	v = newTargetsView(s.dir, execCall(s.tools.testease), func(rec string) {
+		s.openRecord(rec, "Targets", func() { s.highlight(sectionTargets); s.show(v, v.content) })
+	})
+	v.ask = func(title, msg string, yes func()) {
+		dialog.ShowConfirm(title, msg, func(ok bool) {
+			if ok {
+				yes()
+			}
+		}, s.window)
+	}
+	s.show(v, v.content)
+	v.reload()
 }

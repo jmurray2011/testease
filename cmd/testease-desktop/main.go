@@ -80,11 +80,12 @@ const (
 	sectionCampaigns
 	sectionScenarios
 	sectionActivity
+	sectionTargets
 	sectionSettings
 	sections
 )
 
-var sectionNames = [sections]string{"Runs", "Batches", "Campaigns", "Scenarios", "Activity", "Settings"}
+var sectionNames = [sections]string{"Runs", "Batches", "Campaigns", "Scenarios", "Activity", "Targets", "Settings"}
 
 // shell is the window: sections on the left, the current screen on the right.
 type shell struct {
@@ -117,7 +118,7 @@ func newShell(w fyne.Window, dir, from string, remember func(string)) *shell {
 
 	name := widget.NewLabelWithStyle("testease", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 	nav := container.NewVBox(name)
-	shows := [sections]func(){s.showRuns, s.showBatches, s.showCampaigns, s.showScenarios, s.showActivity, s.showSettings}
+	shows := [sections]func(){s.showRuns, s.showBatches, s.showCampaigns, s.showScenarios, s.showActivity, s.showTargets, s.showSettings}
 	for i := range sections {
 		b := widget.NewButton(sectionNames[i], shows[i])
 		b.Alignment = widget.ButtonAlignLeading

@@ -554,7 +554,10 @@ func runHook(ctx context.Context, writer *Writer, activity io.Writer, options Op
 	}
 	writeActivity(activity, "%s started", name)
 	started := time.Now()
-	command := exec.CommandContext(ctx, path)
+	command, err := hookCommand(ctx, path)
+	if err != nil {
+		return 10, err
+	}
 	command.Dir = options.Definition.Dir
 	command.Stdout = io.MultiWriter(stdout, activity)
 	command.Stderr = io.MultiWriter(stderr, activity)

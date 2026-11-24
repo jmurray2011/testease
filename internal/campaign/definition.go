@@ -9,7 +9,9 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -150,7 +152,16 @@ func Load(dir string) (*Definition, error) {
 		if !info.Mode().IsRegular() {
 			return nil, fmt.Errorf("campaign %s lifecycle input %s is not a regular file", definition.Name, input)
 		}
-		if (input == definition.Lifecycle.Prepare || input == definition.Lifecycle.Cleanup) && info.Mode()&0o111 == 0 {
+		if input != definition.Lifecycle.Prepare && input != definition.Lifecycle.Cleanup {
+			continue
+		}
+		if runtime.GOOS == "windows" {
+			// No executable bit: the extension says how a hook runs, and a
+			// hook nothing here can run is refused before the campaign starts.
+			if _, err := hookArgv(runtime.GOOS, path, exec.LookPath); err != nil {
+				return nil, fmt.Errorf("campaign %s %w", definition.Name, err)
+			}
+		} else if info.Mode()&0o111 == 0 {
 			return nil, fmt.Errorf("campaign %s hook %s is not an executable file", definition.Name, input)
 		}
 	}

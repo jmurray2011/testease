@@ -182,6 +182,7 @@ type campaignData struct {
 	RunID     string `json:"run_id"`
 	Verdict   string `json:"verdict"`
 	Log       string `json:"log"`
+	Stderr    string `json:"stderr"`
 }
 
 func readCampaign(dir string) Campaign {
@@ -209,7 +210,20 @@ func readCampaign(dir string) Campaign {
 		case "campaign-started":
 			c.Name, c.Scenario, c.Repeat, c.Started = d.Name, d.Scenario, d.Repeat, e.TS
 		case "hook-finished":
-			c.Activities = append(c.Activities, Activity{Kind: "hook", Name: d.Hook, At: e.TS, Finished: true, ExitCode: d.ExitCode})
+			// A hook opens as an activity named for itself and closes as a
+			// hook, so it closes the activity it opened.
+			key := fmt.Sprintf("%s/%d", d.Hook, 0)
+			i, ok := open[key]
+			if !ok {
+				i = len(c.Activities)
+				c.Activities = append(c.Activities, Activity{Name: d.Hook, At: e.TS})
+			}
+			delete(open, key)
+			a := &c.Activities[i]
+			a.Kind, a.Finished, a.ExitCode = "hook", true, d.ExitCode
+			if d.Stderr != "" {
+				a.Log = d.Stderr
+			}
 		case "activity-started":
 			key := fmt.Sprintf("%s/%d", d.Activity, d.Iteration)
 			open[key] = len(c.Activities)

@@ -216,7 +216,7 @@ func (s *shell) openBatch(b browse.Batch) {
 
 func (s *shell) openCampaign(id string) {
 	var v *campaignView
-	back := func() { v.reload(); s.show(v, v.content) }
+	back := func() { v.returned(); s.show(v, v.content) }
 	v = newCampaignView(s.dir, id, s.showCampaigns, func(rec string) { s.openRecord(rec, "Campaign", back) })
 	s.highlight(sectionCampaigns)
 	s.show(v, v.content)
@@ -230,6 +230,7 @@ func (s *shell) openRecord(dir, from string, back func()) {
 		dialog.ShowError(err, s.window)
 		return
 	}
+	v.onOpenCell = func(cell string) { s.openRecord(cell, "Matrix", func() { s.show(v, v.content) }) }
 	s.show(v, v.content)
 }
 

@@ -99,6 +99,10 @@ type Detail struct {
 	Hosts    []record.TargetResolved `json:"hosts,omitempty"`
 	StepList []Step                  `json:"step_list,omitempty"`
 
+	// CellList is a matrix run's cells, in the order they started. Each is a
+	// record of its own under the parent, where its steps are.
+	CellList []Cell `json:"cell_list,omitempty"`
+
 	// Reports are what the reader had to tolerate; Warnings are what the run
 	// itself recorded about values it repaired at the parse boundary. Neither
 	// is hidden, because a reader that hides them is hiding the defect.
@@ -121,6 +125,13 @@ type Step struct {
 	Stderr    string        `json:"stderr,omitempty"`
 	Claim     string        `json:"claim,omitempty"`
 	Facts     []record.Fact `json:"facts,omitempty"`
+}
+
+// Cell is one cell of a matrix run. Status is absent until the cell finished.
+type Cell struct {
+	Key    string `json:"key"`
+	Status string `json:"status,omitempty"`
+	Dir    string `json:"dir"`
 }
 
 // Open reads one record in full.
@@ -147,6 +158,7 @@ func read(dir string) Detail {
 	// The attempt that stands, the same one every projection reads.
 	targets := map[string]int{}
 	steps := map[int]int{}
+	cells := map[string]int{}
 	for _, e := range rec.Latest().Events {
 		switch e.Kind {
 		case record.KindRunStarted:
@@ -200,6 +212,16 @@ func read(dir string) Detail {
 			}
 		case record.KindCellStarted:
 			d.Cells++
+			if started, err := record.Decode[record.CellStarted](e); err == nil && started.Key != "" {
+				cells[started.Key] = len(d.CellList)
+				d.CellList = append(d.CellList, Cell{Key: started.Key, Dir: filepath.Join(dir, record.CellsDir, started.Key)})
+			}
+		case record.KindCellFinished:
+			if finished, err := record.Decode[record.CellFinished](e); err == nil {
+				if i, ok := cells[finished.Key]; ok {
+					d.CellList[i].Status = string(finished.Status)
+				}
+			}
 		case record.KindRecordWarning:
 			if warning, err := record.Decode[record.Warning](e); err == nil {
 				d.Warnings = append(d.Warnings, warning)

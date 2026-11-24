@@ -156,7 +156,10 @@ func newCampaignView(runsDir, id string, back func(), openRun func(string)) *cam
 	top := backHeader("Campaigns", back, id, container.NewCenter(v.status), openFolderButton(v.c.Dir))
 	v.meta = note("")
 
-	v.table = listing(func() int { return len(v.c.Activities) }, activityTitles, activityWidths, acolRun, v.cell, v.selectActivity)
+	v.table = listing(func() int { return len(v.c.Activities) }, activityTitles, activityWidths, acolRun, v.cell, nil)
+	// Unlike a listing, the picked activity stays highlighted: its log is
+	// what is showing below.
+	v.table.OnSelected = func(id widget.TableCellID) { v.selectActivity(id.Row) }
 
 	v.logTitle = widget.NewLabelWithStyle("", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 	v.logTitle.Truncation = fyne.TextTruncateEllipsis
@@ -232,8 +235,19 @@ func (v *campaignView) reload() {
 	}
 }
 
+// returned re-reads the campaign when a person comes back to it from a record,
+// and highlights the activity whose log is showing. The periodic refresh does
+// not: selecting a row scrolls to it, which would fight a person scrolling.
+func (v *campaignView) returned() {
+	v.reload()
+	if v.selected >= 0 {
+		v.table.Select(widget.TableCellID{Row: v.selected, Col: acolWhat})
+	}
+}
+
 func (v *campaignView) showCampaignLog() {
 	v.selected = -1
+	v.table.UnselectAll()
 	v.logTitle.SetText("output.log")
 	v.log.SetText(v.readLog("output.log"))
 	v.openRun.Disable()

@@ -182,10 +182,7 @@ func TestOutputLogContainsLiveActivity(t *testing.T) {
 func TestPrepareReceiptSuppliesTheGeneratedInputBundle(t *testing.T) {
 	t.Parallel()
 	dir := writeDefinition(t, "schema: 1\nname: demo\nscenario: scenario-a\nlifecycle: {prepare: prepare.sh}\n", "prepare.sh")
-	prepare := filepath.Join(dir, "prepare.sh")
-	if err := os.WriteFile(prepare, []byte("#!/bin/sh\nprintf '{\"schema\":1,\"input_bundle\":\"/staged/inputs.yaml\"}\\n' >\"$TESTEASE_HOOK_RECEIPT\"\n"), 0o700); err != nil {
-		t.Fatal(err)
-	}
+	writeHook(t, filepath.Join(dir, hookName("prepare")), hookWritesReceipt)
 	definition, err := Load(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -208,11 +205,7 @@ func TestPrepareReceiptSuppliesTheGeneratedInputBundle(t *testing.T) {
 
 func TestRelativeRunsDirStillHandsHooksAnAbsoluteReceiptPath(t *testing.T) {
 	dir := writeDefinition(t, "schema: 1\nname: demo\nscenario: scenario-a\nlifecycle: {prepare: prepare.sh}\n", "prepare.sh")
-	prepare := filepath.Join(dir, "prepare.sh")
-	script := "#!/bin/sh\ncd /\nprintf '{\"schema\":1,\"input_bundle\":\"/staged/inputs.yaml\"}\\n' >\"$TESTEASE_HOOK_RECEIPT\"\n"
-	if err := os.WriteFile(prepare, []byte(script), 0o700); err != nil {
-		t.Fatal(err)
-	}
+	writeHook(t, filepath.Join(dir, hookName("prepare")), hookWritesReceiptFromRoot)
 	definition, err := Load(dir)
 	if err != nil {
 		t.Fatal(err)

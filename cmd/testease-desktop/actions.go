@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"image/color"
 	"os"
 	"path/filepath"
 	"slices"
@@ -10,11 +11,13 @@ import (
 	"time"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/storage"
 	"fyne.io/fyne/v2/widget"
 
+	"github.com/jmurray2011/testease/internal/browse"
 	"github.com/jmurray2011/testease/internal/targetcatalog"
 )
 
@@ -299,41 +302,90 @@ func (s *shell) renderRecord(dir, choice string) {
 	s.startRecordJob(dir, "render "+filepath.Base(dir)+" ("+choice+")", renderArgs(s.dir, dir, choice))
 }
 
-// chooseCompare asks which other runs of the same scenario to compare a
-// record with, and asks reproduce which stable facts differ.
-func (s *shell) chooseCompare(dir string) {
+// chooseCompare asks which other runs of the same scenario to put beside a
+// record, and back returns to the record.
+func (s *shell) chooseCompare(dir string, back func()) {
 	candidates := compareCandidates(s.dir, dir)
 	if len(candidates) == 0 {
 		dialog.ShowInformation("Nothing to compare with", "There is no other record of this scenario in the runs directory.", s.window)
 		return
 	}
+	s.pickRuns("Compare "+filepath.Base(dir), "Other records of the same scenario, newest first.", candidates, 1, func(dirs []string) {
+		s.compareRecords(append([]string{dir}, dirs...), "Run", back)
+	})
+}
+
+// chooseRunsToCompare asks which of the runs the Runs screen lists to put
+// side by side.
+func (s *shell) chooseRunsToCompare() {
+	candidates := append([]browse.Run(nil), s.runs.shown...)
+	if len(candidates) < 2 {
+		dialog.ShowInformation("Nothing to compare", "Comparing takes two runs or more, and the Runs screen lists fewer. Clear its filters to list more.", s.window)
+		return
+	}
+	s.pickRuns("Compare runs", "The runs listed, newest first. Pick two or more; any scenario.", candidates, 2, func(dirs []string) {
+		s.compareRecords(dirs, "Runs", s.showRuns)
+	})
+}
+
+// pickRuns asks which runs to take, at least the given number, in a dialog of
+// checkboxes.
+func (s *shell) pickRuns(title, hint string, candidates []browse.Run, least int, done func(dirs []string)) {
 	byID := make(map[string]string, len(candidates))
 	ids := make([]string, len(candidates))
 	for i, r := range candidates {
 		ids[i], byID[r.RunID] = r.RunID, r.Dir
 	}
 	checks := widget.NewCheckGroup(ids, nil)
-	checks.SetSelected(ids[:1])
-	form := dialog.NewForm("Compare "+filepath.Base(dir), "Compare", "Cancel", []*widget.FormItem{
-		{Text: "With", Widget: container.NewVScroll(checks), HintText: "Other records of the same scenario, newest first."},
+	if least == 1 {
+		checks.SetSelected(ids[:1])
+	}
+	form := dialog.NewForm(title, "Compare", "Cancel", []*widget.FormItem{
+		{Text: "Runs", Widget: pickerList(checks), HintText: hint},
 	}, func(ok bool) {
-		if !ok || len(checks.Selected) == 0 {
+		if !ok {
 			return
 		}
-		others := make([]string, 0, len(checks.Selected))
+		if len(checks.Selected) < least {
+			dialog.ShowInformation("Pick more runs", fmt.Sprintf("Pick at least %d runs to compare.", least), s.window)
+			return
+		}
+		dirs := make([]string, 0, len(checks.Selected))
 		for _, id := range ids {
 			if slices.Contains(checks.Selected, id) {
-				others = append(others, byID[id])
+				dirs = append(dirs, byID[id])
 			}
 		}
-		s.compareRecords(dir, others)
+		done(dirs)
 	}, s.window)
 	form.Resize(fyne.NewSize(620, 420))
 	form.Show()
 }
 
-func (s *shell) compareRecords(dir string, others []string) {
-	s.startRecordJob(dir, "compare "+filepath.Base(dir), compareArgs(s.dir, dir, others))
+// pickerList holds a list of runs to pick from at a height that shows a dozen
+// of them, not the one row a scroll asks for on its own.
+func pickerList(checks *widget.CheckGroup) fyne.CanvasObject {
+	room := canvas.NewRectangle(color.Transparent)
+	room.SetMinSize(fyne.NewSize(520, 320))
+	return container.NewStack(room, container.NewVScroll(checks))
+}
+
+// compareRecords puts runs side by side. Runs of one scenario can also be
+// put to the reproduce judge from there.
+func (s *shell) compareRecords(dirs []string, from string, back func()) {
+	v, err := newCompareView(dirs, from, back)
+	if err != nil {
+		dialog.ShowError(err, s.window)
+		return
+	}
+	v.window = s.window
+	if v.oneScenario() {
+		v.reproduce.set(func() {
+			d := v.dirs()
+			s.startJob("reproduce "+filepath.Base(d[0]), compareArgs(s.dir, d[0], d[1:]))
+		})
+	}
+	s.show(v, v.content)
 }
 
 // startRecordJob starts a job about a record already on disk, which Open

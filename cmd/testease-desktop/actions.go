@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"time"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/storage"
 	"fyne.io/fyne/v2/widget"
@@ -203,7 +205,7 @@ func (s *shell) chooseBatchFile() {
 		s.runBatch(path)
 	}, s.window)
 	d.SetFilter(storage.NewExtensionFileFilter([]string{".yaml", ".yml"}))
-	if l := lastFolder(prefBatchFolder); l != nil {
+	if l := startFolder(prefBatchFolder); l != nil {
 		d.SetLocation(l)
 	}
 	d.Resize(pickerSize)
@@ -224,10 +226,7 @@ func (s *shell) chooseCampaign() {
 		}
 		dir := pickedPath(uri.Path())
 		rememberFolder(prefCampaignFolder, dir)
-		extra := widget.NewMultiLineEntry()
-		extra.Validator = overridesValid
-		extra.SetPlaceHolder("--repeat=3\n--target=lab-box")
-		extra.SetMinRowsVisible(4)
+		extra := overridesEntry()
 		form := dialog.NewForm("Run campaign "+filepath.Base(dir), "Run", "Cancel", []*widget.FormItem{
 			widget.NewFormItem("Folder", note(dir)),
 			{Text: "Overrides", Widget: extra, HintText: "One flag a line, passed as typed. Leave empty to run the campaign as written."},
@@ -242,7 +241,7 @@ func (s *shell) chooseCampaign() {
 		form.Resize(fyne.NewSize(560, 320))
 		form.Show()
 	}, s.window)
-	if l := lastFolder(prefCampaignFolder); l != nil {
+	if l := startFolder(prefCampaignFolder); l != nil {
 		d.SetLocation(l)
 	}
 	d.Resize(pickerSize)
@@ -256,4 +255,61 @@ func (s *shell) runCampaign(dir, extra string) error {
 	}
 	s.startJob("campaign "+filepath.Base(dir), args)
 	return nil
+}
+
+// chooseRender asks which view to render a record in, and renders it.
+func (s *shell) chooseRender(dir string) {
+	choices := renderChoices(dir)
+	pick := widget.NewSelect(choices, nil)
+	pick.SetSelectedIndex(0)
+	form := dialog.NewForm("Render "+filepath.Base(dir), "Render", "Cancel", []*widget.FormItem{
+		{Text: "View", Widget: pick, HintText: "Views marked recorded are the ones the scenario named."},
+	}, func(ok bool) {
+		if ok && pick.Selected != "" {
+			s.renderRecord(dir, pick.Selected)
+		}
+	}, s.window)
+	form.Resize(fyne.NewSize(480, 220))
+	form.Show()
+}
+
+func (s *shell) renderRecord(dir, choice string) {
+	s.startJob("render "+filepath.Base(dir)+" ("+choice+")", renderArgs(s.dir, dir, choice))
+}
+
+// chooseCompare asks which other runs of the same scenario to compare a
+// record with, and asks reproduce which stable facts differ.
+func (s *shell) chooseCompare(dir string) {
+	candidates := compareCandidates(s.dir, dir)
+	if len(candidates) == 0 {
+		dialog.ShowInformation("Nothing to compare with", "There is no other record of this scenario in the runs directory.", s.window)
+		return
+	}
+	byID := make(map[string]string, len(candidates))
+	ids := make([]string, len(candidates))
+	for i, r := range candidates {
+		ids[i], byID[r.RunID] = r.RunID, r.Dir
+	}
+	checks := widget.NewCheckGroup(ids, nil)
+	checks.SetSelected(ids[:1])
+	form := dialog.NewForm("Compare "+filepath.Base(dir), "Compare", "Cancel", []*widget.FormItem{
+		{Text: "With", Widget: container.NewVScroll(checks), HintText: "Other records of the same scenario, newest first."},
+	}, func(ok bool) {
+		if !ok || len(checks.Selected) == 0 {
+			return
+		}
+		others := make([]string, 0, len(checks.Selected))
+		for _, id := range ids {
+			if slices.Contains(checks.Selected, id) {
+				others = append(others, byID[id])
+			}
+		}
+		s.compareRecords(dir, others)
+	}, s.window)
+	form.Resize(fyne.NewSize(620, 420))
+	form.Show()
+}
+
+func (s *shell) compareRecords(dir string, others []string) {
+	s.startJob("compare "+filepath.Base(dir), compareArgs(s.dir, dir, others))
 }

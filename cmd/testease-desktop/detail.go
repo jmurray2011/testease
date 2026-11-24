@@ -51,8 +51,9 @@ type detailView struct {
 	cells      *widget.List
 	onOpenCell func(dir string)
 
-	// judge reads the record again with its judge.
-	judge *action
+	// judge reads the record again with its judge; render shows it in one
+	// of its views; compare asks which stable facts differ from other runs.
+	judge, render, compare *action
 }
 
 func newDetailView(dir string, back func()) (*detailView, error) {
@@ -64,11 +65,14 @@ func newDetailViewFrom(dir, backLabel string, back func()) (*detailView, error) 
 	if err != nil {
 		return nil, err
 	}
-	v := &detailView{d: d, selected: -1, backLabel: backLabel, back: back, judge: newAction("Judge", theme.ConfirmIcon())}
+	v := &detailView{
+		d: d, selected: -1, backLabel: backLabel, back: back, judge: newAction("Judge", theme.ConfirmIcon()),
+		render: newAction("Render…", theme.DocumentIcon()), compare: newAction("Compare…", theme.ListIcon()),
+	}
 
 	// Header: where this is, what it measured, and how to get at the files.
 	status := newPill(statusOf(d.Run), statusKind(statusOf(d.Run)))
-	top := backHeader(backLabel, back, d.RunID, container.NewCenter(status), v.judge.Button, openFolderButton(d.Dir))
+	top := backHeader(backLabel, back, d.RunID, container.NewCenter(status), v.judge.Button, v.render.Button, v.compare.Button, openFolderButton(d.Dir))
 
 	v.meta = metaParts(d)
 	metaLabel := widget.NewLabel(strings.Join(v.meta, "    "))

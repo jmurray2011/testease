@@ -244,6 +244,7 @@ func (s *shell) openCampaign(id string) {
 	var v *campaignView
 	back := func() { v.returned(); s.show(v, v.content) }
 	v = newCampaignView(s.dir, id, s.showCampaigns, func(rec string) { s.openRecord(rec, "Campaign", back) })
+	v.pack.set(func() { s.startJob("package "+id, packageArgs(s.dir, id)) })
 	s.highlight(sectionCampaigns)
 	s.show(v, v.content)
 }
@@ -262,6 +263,8 @@ func (s *shell) openRecord(dir, from string, back func()) {
 			jv.record = dir
 		}
 	})
+	v.render.set(func() { s.chooseRender(dir) })
+	v.compare.set(func() { s.chooseCompare(dir) })
 	s.show(v, v.content)
 }
 

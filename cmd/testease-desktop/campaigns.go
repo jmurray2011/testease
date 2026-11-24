@@ -147,14 +147,16 @@ type campaignView struct {
 	log      *widget.TextGrid
 	openRun  *widget.Button
 	content  fyne.CanvasObject
+	// pack writes an archive of the campaign's records.
+	pack *action
 }
 
 func newCampaignView(runsDir, id string, back func(), openRun func(string)) *campaignView {
-	v := &campaignView{runsDir: runsDir, id: id, selected: -1, onOpenRun: openRun, problem: message()}
+	v := &campaignView{runsDir: runsDir, id: id, selected: -1, onOpenRun: openRun, problem: message(), pack: newAction("Package", theme.DownloadIcon())}
 	v.c = findCampaign(runsDir, id)
 
 	v.status = newPill(v.c.Status, groupStatusKind(v.c.Status))
-	top := backHeader("Campaigns", back, id, container.NewCenter(v.status), openFolderButton(v.c.Dir))
+	top := backHeader("Campaigns", back, id, container.NewCenter(v.status), v.pack.Button, openFolderButton(v.c.Dir))
 	v.meta = note("")
 
 	v.table = listing(func() int { return len(v.c.Activities) }, activityTitles, activityWidths, acolRun, v.cell, nil)

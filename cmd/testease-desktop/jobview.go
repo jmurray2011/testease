@@ -263,7 +263,7 @@ func newActivityView(jobs func() []*jobView, onOpen func(*jobView)) *activityVie
 		func(row int) { v.onOpen(v.jobs()[len(v.jobs())-1-row]) })
 	v.content = container.NewBorder(
 		container.NewVBox(screenTitle("Activity", nil), widget.NewSeparator(), v.message),
-		container.NewVBox(widget.NewSeparator(), note("Runs and doctors started here since the app opened, newest first. Every run's record is in Runs as well.")),
+		container.NewVBox(widget.NewSeparator(), note("Everything started here since the app opened, newest first. Every run's record is in Runs as well.")),
 		nil, nil, v.table,
 	)
 	v.reload()
@@ -287,7 +287,7 @@ func (v *activityView) cell(row, col int) (string, pillKind, bool) {
 	jv := jobs[len(jobs)-1-row]
 	switch col {
 	case acolStarted:
-		return jv.started.Format("15:04:05"), pillNeutral, false
+		return jv.started.UTC().Format("15:04:05") + " UTC", pillNeutral, false
 	case acolCommand:
 		return jv.title, pillNeutral, false
 	case acolState:

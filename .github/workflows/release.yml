@@ -1,0 +1,97 @@
+name: release
+
+# A tag v* builds testease and testease-desktop for Linux and Windows and
+# attaches them to a GitHub release. Each archive holds both binaries side by
+# side, because the app looks for testease beside itself first. Run by hand,
+# it builds the same archives as workflow artifacts and releases nothing.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+  # A change to this file builds the archives on its pull request, so a broken
+  # release is found before a tag needs it.
+  pull_request:
+    paths: [".github/workflows/release.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux-amd64
+            exe: ""
+          - os: windows-latest
+            platform: windows-amd64
+            exe: .exe
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version-file: cmd/testease-desktop/go.mod
+          cache: true
+          cache-dependency-path: |
+            go.sum
+            cmd/testease-desktop/go.sum
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libgl1-mesa-dev xorg-dev libwayland-dev libxkbcommon-dev
+
+      # The CLI is stamped as make build stamps it: a record names the binary
+      # that took the measurement.
+      - name: Build
+        run: |
+          version="$(git describe --tags --always --dirty)"
+          commit="$(git rev-parse HEAD)"
+          out="dist/testease-${version}-${{ matrix.platform }}"
+          mkdir -p "$out"
+          CGO_ENABLED=0 go build -trimpath -ldflags "-X main.version=${version} -X main.commit=${commit}" \
+            -o "$out/testease${{ matrix.exe }}" ./cmd/testease
+          gui=""
+          if [ "${{ runner.os }}" = "Windows" ]; then gui="-H windowsgui"; fi
+          (cd cmd/testease-desktop && go build -trimpath -ldflags "$gui" -o "../../$out/testease-desktop${{ matrix.exe }}" .)
+          cp LICENSE* README* "$out/" 2>/dev/null || true
+          echo "OUT=$out" >> "$GITHUB_ENV"
+          echo "NAME=$(basename "$out")" >> "$GITHUB_ENV"
+
+      - name: Package
+        run: |
+          cd dist
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            7z a -tzip "$NAME.zip" "$NAME" > /dev/null
+          else
+            tar -czf "$NAME.tar.gz" "$NAME"
+          fi
+          rm -rf "$NAME"
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ${{ matrix.platform }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        run: cd dist && sha256sum * > SHA256SUMS
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" dist/* --repo "${GITHUB_REPOSITORY}" --title "${GITHUB_REF_NAME}" --generate-notes

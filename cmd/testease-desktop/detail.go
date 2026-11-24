@@ -191,7 +191,7 @@ func (v *detailView) selectStep(i widget.ListItemID) {
 		value := ""
 		switch {
 		case f.Value != nil:
-			value = *f.Value
+			value = shown(f.Key, *f.Value)
 		case f.Error != "":
 			value = "no reading: " + f.Error
 		default:
@@ -299,7 +299,7 @@ func metaParts(d browse.Detail) []string {
 		sort.Strings(keys)
 		params := make([]string, len(keys))
 		for i, k := range keys {
-			params[i] = k + "=" + d.Params[k]
+			params[i] = k + "=" + shown(k, d.Params[k])
 		}
 		parts = append(parts, "Params "+strings.Join(params, " "))
 	}

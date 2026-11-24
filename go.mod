@@ -1,6 +1,6 @@
 module github.com/jmurray2011/testease
 
-go 1.26.10
+go 1.26.11
 
 require (
 	github.com/masterzen/winrm v0.0.0-20260407182533-5570be7f80cf

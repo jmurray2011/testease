@@ -19,7 +19,7 @@ func TestFargateArtifactLogFramesStayBounded(t *testing.T) {
 	t.Parallel()
 	artifact := filepath.Join(t.TempDir(), "large.bin")
 	command := wrapper([]byte(fmt.Sprintf("head -c 70000 /dev/zero > %s\n", shellQuote(artifact))), nil, []string{artifact})
-	out, err := exec.Command("sh", "-c", command).Output()
+	out, err := exec.Command(posixShell(t), "-c", command).Output()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -240,7 +240,7 @@ func TestFargateListBatchesTaskDescriptions(t *testing.T) {
 func TestFargateWrapperCapturesFactsFromFD3(t *testing.T) {
 	t.Parallel()
 	command := wrapper([]byte("printf 'fact\\tos.kernel\\tlinux\\n' >&3\n"), nil, nil)
-	out, err := exec.Command("sh", "-c", command).CombinedOutput()
+	out, err := exec.Command(posixShell(t), "-c", command).CombinedOutput()
 	if err != nil {
 		t.Fatalf("wrapper failed: %v; output: %s", err, out)
 	}
@@ -260,7 +260,7 @@ func TestFargateWrapperHonorsTheProbeShebang(t *testing.T) {
 	t.Parallel()
 	probe := []byte("#!/bin/bash\nset -euo pipefail\nprintf 'fact\\tbash.interpreter\\t/bin/bash\\n' >&3\n")
 	command := wrapper(probe, nil, nil)
-	out, err := exec.Command("sh", "-c", command).CombinedOutput()
+	out, err := exec.Command(posixShell(t), "-c", command).CombinedOutput()
 	if err != nil {
 		t.Fatalf("Bash probe failed under Fargate wrapper: %v; output: %s", err, out)
 	}
@@ -286,7 +286,7 @@ func TestFargateArtifactFramesWorkWithTenThousandColumnFoldLimit(t *testing.T) {
 	}
 	artifact := filepath.Join(t.TempDir(), "large.bin")
 	command := wrapper([]byte(fmt.Sprintf("head -c 70000 /dev/zero > %s\n", shellQuote(artifact))), nil, []string{artifact})
-	cmd := exec.Command("sh", "-c", command)
+	cmd := exec.Command(posixShell(t), "-c", command)
 	cmd.Env = append(os.Environ(), "PATH="+bin+":"+os.Getenv("PATH"))
 	out, err := cmd.CombinedOutput()
 	if err != nil {

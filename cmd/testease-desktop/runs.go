@@ -19,7 +19,6 @@ import (
 // The Runs screen's columns.
 const (
 	colRun = iota
-	colScenario
 	colMeasured
 	colStatus
 	colVerdict
@@ -28,8 +27,10 @@ const (
 )
 
 var (
-	columnTitles = [columns]string{"Run", "Scenario", "Measured", "Status", "Latest verdict", "Target fate"}
-	columnWidths = [columns]float32{260, 120, 85, 105, 250, 200}
+	// No Scenario column: a run id starts with its scenario by contract, and
+	// the filter matches on scenario all the same.
+	columnTitles = [columns]string{"Run", "Measured", "Status", "Latest verdict", "Target fate"}
+	columnWidths = [columns]float32{260, 85, 105, 240, 180}
 )
 
 // runsView lists the records under a runs directory, newest first.
@@ -168,11 +169,12 @@ func (v *runsView) reload() {
 	v.apply()
 }
 
-// fitCap is as wide as a fitted column gets; past it, the text is cut with an
-// ellipsis like any other.
-const fitCap = 560
+// fitCap is as wide as the Run column gets: what is left beside the sections
+// and the other columns in the window the app opens at. Past it, an id is cut
+// with an ellipsis like any other text.
+const fitCap = 520
 
-// fit widens Run and Scenario to their longest text.
+// fit widens the Run column to the longest run id.
 func (v *runsView) fit() {
 	pad := 2*theme.InnerPadding() + theme.Padding()
 	widest := func(col int, style fyne.TextStyle, text func(browse.Run) string) float32 {
@@ -185,7 +187,6 @@ func (v *runsView) fit() {
 		return min(w, fitCap)
 	}
 	v.widths[colRun] = widest(colRun, fyne.TextStyle{Monospace: true}, func(r browse.Run) string { return r.RunID })
-	v.widths[colScenario] = widest(colScenario, fyne.TextStyle{}, func(r browse.Run) string { return r.Scenario })
 	for i, w := range v.widths {
 		v.table.SetColumnWidth(i, w)
 	}
@@ -225,8 +226,6 @@ func (v *runsView) cell(row, col int) (text string, kind pillKind, isPill bool) 
 	switch col {
 	case colRun:
 		return r.RunID, pillNeutral, false
-	case colScenario:
-		return r.Scenario, pillNeutral, false
 	case colMeasured:
 		return measuredText(r), pillNeutral, false
 	case colStatus:

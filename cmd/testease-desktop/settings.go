@@ -28,20 +28,20 @@ func resolveRunsDir(flag, env, remembered string) (dir, from string) {
 	}
 }
 
-// shortPath is a path as the narrow sidebar shows it: its last two elements,
-// whole, after an ellipsis, rather than the whole path wrapped mid-word.
-func shortPath(p string) string {
+// sidebarPath is a runs directory as the narrow sidebar shows it: the folder's
+// own name, whole, and on a second line the folder it is in, shortened to its
+// last element.
+func sidebarPath(p string) (name, in string) {
 	clean := filepath.Clean(p)
+	name = filepath.Base(clean)
+	parent := filepath.Dir(clean)
+	if parent == "." || parent == clean {
+		return name, ""
+	}
 	sep := string(filepath.Separator)
-	parts := strings.Split(strings.TrimPrefix(clean, filepath.VolumeName(clean)), sep)
-	var kept []string
-	for _, part := range parts {
-		if part != "" {
-			kept = append(kept, part)
-		}
+	trimmed := strings.TrimPrefix(parent, filepath.VolumeName(parent))
+	if strings.Count(strings.Trim(trimmed, sep), sep) == 0 {
+		return name, "in " + parent
 	}
-	if len(kept) <= 2 {
-		return p
-	}
-	return "…" + sep + filepath.Join(kept[len(kept)-2:]...)
+	return name, "in …" + sep + filepath.Base(parent)
 }

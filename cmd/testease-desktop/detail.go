@@ -37,6 +37,8 @@ type detailView struct {
 	stderr    *widget.TextGrid
 	facts     *fyne.Container
 	factLines []string
+	tabs      *container.AppTabs
+	timeline  *timelineChart
 
 	meta, verdicts, targets, notes []string
 	content                        fyne.CanvasObject
@@ -121,12 +123,19 @@ func newDetailViewFrom(dir, backLabel string, back func()) (*detailView, error) 
 	v.stderr = widget.NewTextGrid()
 	v.stderr.Scroll = fyne.ScrollNone
 	v.facts = container.NewVBox()
-	tabs := container.NewAppTabs(
+	v.tabs = container.NewAppTabs(
 		container.NewTabItem("stdout", container.NewScroll(container.NewPadded(v.stdout))),
 		container.NewTabItem("stderr", container.NewScroll(container.NewPadded(v.stderr))),
 		container.NewTabItem("Facts", container.NewVScroll(container.NewPadded(v.facts))),
 	)
-	center := container.NewBorder(container.NewVBox(v.stepTitle, v.stepMeta, widget.NewSeparator()), nil, nil, nil, tabs)
+	// The whole run against its own clock, from the record's event times.
+	if rec, err := record.Read(d.Dir); err == nil {
+		if spans, total := timeline(rec.Events); len(spans) > 0 {
+			v.timeline = newTimelineChart(spans, total, v.openStep)
+			v.tabs.Append(container.NewTabItem("Timeline", container.NewVScroll(container.NewPadded(v.timeline))))
+		}
+	}
+	center := container.NewBorder(container.NewVBox(v.stepTitle, v.stepMeta, widget.NewSeparator()), nil, nil, nil, v.tabs)
 
 	// What judges, targets and readers said, on the right.
 	v.verdicts = verdictParts(d)
@@ -218,12 +227,26 @@ func stepStatus(s browse.Step) string {
 	return s.Status
 }
 
+// openStep shows the step a timeline row names, with its output.
+func (v *detailView) openStep(seq int) {
+	for i, s := range v.d.StepList {
+		if s.Seq == seq {
+			v.steps.Select(i)
+			v.tabs.SelectIndex(0)
+			return
+		}
+	}
+}
+
 func (v *detailView) selectStep(i widget.ListItemID) {
 	if i < 0 || i >= len(v.d.StepList) {
 		return
 	}
 	v.selected = i
 	s := v.d.StepList[i]
+	if v.timeline != nil {
+		v.timeline.Select(s.Seq)
+	}
 	v.stepTitle.SetText(fmt.Sprintf("%d · %s", s.Seq, s.Label))
 
 	var parts []string

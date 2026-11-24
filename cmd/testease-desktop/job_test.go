@@ -40,7 +40,8 @@ func fakeTestease(mode string) int {
 	say(map[string]any{"event": "run-started"})
 	_, _ = fmt.Fprintln(os.Stderr, "level=INFO msg=\"resolved targets\" hosts=1")
 	say(map[string]any{"event": "step-started", "step": 1, "total": 2, "label": "pull image"})
-	say(map[string]any{"event": "step-measured", "step": 1, "total": 2, "label": "pull image", "status": "measured", "rc": 0, "seconds": 1.5})
+	// As testease does, the label rides step-started alone.
+	say(map[string]any{"event": "step-measured", "step": 1, "total": 2, "status": "measured", "rc": 0, "seconds": 1.5})
 	say(map[string]any{"event": "step-started", "step": 2, "total": 2, "label": "ask the box"})
 
 	status, code := "measured", 0
@@ -52,7 +53,7 @@ func fakeTestease(mode string) int {
 			return 99
 		}
 	} else {
-		say(map[string]any{"event": "step-measured", "step": 2, "total": 2, "label": "ask the box", "status": "measured", "rc": 0, "seconds": 0.4})
+		say(map[string]any{"event": "step-measured", "step": 2, "total": 2, "status": "measured", "rc": 0, "seconds": 0.4})
 	}
 	say(map[string]any{"event": "run-finished", "status": status, "seconds": 2})
 	_ = json.NewEncoder(os.Stdout).Encode(map[string]any{"run_id": id, "status": status})
@@ -91,6 +92,13 @@ func TestARunReportsItsStepsAsTheyHappenAndWhichRecordItWrote(t *testing.T) {
 	}
 	if strings.Contains(s.Log, `"event"`) {
 		t.Errorf("log = %q, want the progress lines read, not echoed", s.Log)
+	}
+	// The progress is told in words in the output too, so it is never blank
+	// while a run is going.
+	for _, want := range []string{"step 1 started: pull image", "step 1 measured, rc 0, 1.5 s", "run finished: measured"} {
+		if !strings.Contains(s.Log, want) {
+			t.Errorf("log = %q, want %q", s.Log, want)
+		}
 	}
 }
 

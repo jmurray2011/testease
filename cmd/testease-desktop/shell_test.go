@@ -97,6 +97,10 @@ func TestARunStartedHereIsShownUnderActivity(t *testing.T) {
 		t.Errorf("step 2 = %q", got)
 	}
 
+	if jv.stop.Text != "Stop" || !jv.stop.Disabled() {
+		t.Errorf("a finished job's button reads %q, disabled %v", jv.stop.Text, jv.stop.Disabled())
+	}
+
 	s.showActivity()
 	a := s.current.(*activityView)
 	if got := a.cellText(0, acolCommand); got != "run hello" {

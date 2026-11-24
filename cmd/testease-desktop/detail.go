@@ -96,13 +96,13 @@ func newDetailViewFrom(dir, backLabel string, back func()) (*detailView, error) 
 			seq.Importance = widget.LowImportance
 			label := widget.NewLabel("")
 			label.Truncation = fyne.TextTruncateEllipsis
-			return container.NewBorder(nil, nil, seq, container.NewCenter(newPill("", pillNeutral)), label)
+			return container.NewBorder(nil, nil, container.NewGridWrap(fyne.NewSize(34, seq.MinSize().Height), seq), container.NewCenter(newPill("", pillNeutral)), label)
 		},
 		func(i widget.ListItemID, o fyne.CanvasObject) {
 			s := d.StepList[i]
 			row := o.(*fyne.Container)
 			row.Objects[0].(*widget.Label).SetText(s.Label)
-			row.Objects[1].(*widget.Label).SetText(fmt.Sprint(s.Seq))
+			row.Objects[1].(*fyne.Container).Objects[0].(*widget.Label).SetText(fmt.Sprint(s.Seq))
 			p := row.Objects[2].(*fyne.Container).Objects[0].(*pill)
 			p.Set(stepStatus(s), statusKind(s.Status))
 		},
@@ -310,11 +310,17 @@ func (v *detailView) selectStep(i widget.ListItemID) {
 		val := widget.NewLabelWithStyle(value, fyne.TextAlignLeading, fyne.TextStyle{Monospace: true})
 		val.Selectable = true
 		val.Wrapping = fyne.TextWrapWord
+		// The name over its value, and the trend in a column of its own, so a
+		// long name or value never crowds the other.
 		var trend fyne.CanvasObject = widget.NewLabel("")
 		if tr, ok := v.trends[factKey{s.Label, f.Key}]; ok && !looksSecret(f.Key) {
-			trend = trendView(tr)
+			trend = trendView(f.Key, tr)
 		}
-		v.facts.Add(container.NewBorder(nil, nil, container.NewGridWrap(fyne.NewSize(200, key.MinSize().Height), key), trend, val))
+		key.Wrapping = fyne.TextWrapBreak
+		v.facts.Add(container.NewBorder(nil, nil, nil,
+			container.NewGridWrap(fyne.NewSize(trendColumn, sparkHeight+12), trend),
+			container.NewVBox(key, val)))
+		v.facts.Add(widget.NewSeparator())
 	}
 	v.facts.Refresh()
 }

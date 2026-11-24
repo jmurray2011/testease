@@ -3,7 +3,9 @@ package main
 import (
 	"testing"
 
+	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/test"
+	"fyne.io/fyne/v2/widget"
 )
 
 // Output can be searched, and the first line that looks like trouble can be
@@ -52,6 +54,7 @@ func TestSearchingARecordsOutputCountsAndSteps(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	v.search.debounce = func(f func()) { f() }
 	v.steps.Select(0)
 	v.tabs.SelectIndex(0)
 	v.search.entry.SetText("app")
@@ -61,5 +64,24 @@ func TestSearchingARecordsOutputCountsAndSteps(t *testing.T) {
 	v.search.entry.SetText("nothing like this")
 	if v.search.found.Text != "no match" {
 		t.Errorf("found %q", v.search.found.Text)
+	}
+}
+
+// Typing does not search on every key: the search waits for a pause, so a
+// large output does not lag behind the keyboard.
+func TestSearchWaitsForAPauseInTyping(t *testing.T) {
+	test.NewTempApp(t)
+	var ran int
+	s := newOutputSearch(func() (*widget.TextGrid, *container.Scroll) { ran++; return nil, nil })
+	s.debounce = func(f func()) { s.pending = f }
+	s.entry.SetText("d")
+	s.entry.SetText("do")
+	s.entry.SetText("dog")
+	if ran != 0 {
+		t.Errorf("searched %d times while typing", ran)
+	}
+	s.pending()
+	if ran != 1 {
+		t.Errorf("searched %d times after the pause", ran)
 	}
 }

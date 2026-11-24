@@ -111,7 +111,7 @@ func (c *timelineChart) Select(seq int) {
 
 const (
 	timelineRow   = 26
-	timelineLabel = 220
+	timelineLabel = 230
 	timelineTail  = 90
 )
 
@@ -207,7 +207,7 @@ func (r *timelineRenderer) Refresh() {
 			row.bg.FillColor = theme.Color(colorSelected)
 		}
 		row.bg.Refresh()
-		row.label.Text = shorten(fmt.Sprintf("%d %s", s.Seq, s.Label), 26)
+		row.label.Text = shorten(fmt.Sprintf("%d %s", s.Seq, s.Label), 22)
 		row.label.Color = theme.Color(theme.ColorNameForeground)
 		row.label.Refresh()
 		row.bar.FillColor = spanColor(s.Status)

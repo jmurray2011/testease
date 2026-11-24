@@ -147,6 +147,10 @@ type sparkRenderer struct {
 
 const sparkWidth, sparkHeight = 120, 26
 
+// trendColumn is the width the Facts tab gives every trend, so the lines
+// start at the same place on every row.
+const trendColumn = 300
+
 func (r *sparkRenderer) Layout(size fyne.Size) {
 	vs := r.s.values
 	lo, hi := vs[0], vs[0]
@@ -190,10 +194,24 @@ func (r *sparkRenderer) Objects() []fyne.CanvasObject {
 }
 func (r *sparkRenderer) Destroy() {}
 
-// trendView is what the Facts tab shows beside a value: a line for numbers,
+// quantity says whether a fact's numbers measure an amount. A status or exit
+// code names an outcome, and a line between two codes means nothing.
+func quantity(key string) bool {
+	words := strings.FieldsFunc(strings.ToLower(key), func(r rune) bool { return r == '.' || r == '_' || r == '-' })
+	if len(words) == 0 {
+		return true
+	}
+	switch words[len(words)-1] {
+	case "status", "code", "rc", "exit":
+		return false
+	}
+	return true
+}
+
+// trendView is what the Facts tab shows beside a value: a line for amounts,
 // otherwise how often it changed.
-func trendView(t factTrend) fyne.CanvasObject {
-	if nums, ok := t.numbers(); ok {
+func trendView(key string, t factTrend) fyne.CanvasObject {
+	if nums, ok := t.numbers(); ok && quantity(key) {
 		lo, hi := nums[0], nums[0]
 		for _, n := range nums {
 			lo, hi = min(lo, n), max(hi, n)

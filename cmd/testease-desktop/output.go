@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"fyne.io/fyne/v2"
@@ -66,7 +67,16 @@ type outputSearch struct {
 	grid    func() (*widget.TextGrid, *container.Scroll)
 	matches []match
 	at      int
+
+	// debounce runs a search once typing pauses; pending is the search it
+	// holds, so a test can run it.
+	debounce func(func())
+	pending  func()
+	timer    *time.Timer
 }
+
+// searchPause is how long typing must stop before the output is searched.
+const searchPause = 250 * time.Millisecond
 
 var (
 	matchStyle   = &widget.CustomTextGridStyle{BGColor: nil}
@@ -76,7 +86,13 @@ var (
 func newOutputSearch(grid func() (*widget.TextGrid, *container.Scroll)) *outputSearch {
 	s := &outputSearch{grid: grid, entry: widget.NewEntry(), found: widget.NewLabel("")}
 	s.entry.SetPlaceHolder("Search output")
-	s.entry.OnChanged = func(string) { s.apply() }
+	s.debounce = func(f func()) {
+		if s.timer != nil {
+			s.timer.Stop()
+		}
+		s.timer = time.AfterFunc(searchPause, func() { fyne.Do(f) })
+	}
+	s.entry.OnChanged = func(string) { s.debounce(s.apply) }
 	s.entry.OnSubmitted = func(string) { s.step(1) }
 	s.found.Importance = widget.LowImportance
 	s.found.Alignment = fyne.TextAlignTrailing

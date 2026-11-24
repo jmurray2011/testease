@@ -195,8 +195,10 @@ func TestLargeNamedMediaReplacesDifferentResidentBytes(t *testing.T) {
 func TestStaticMediaPreservesExecutableIntent(t *testing.T) {
 	t.Parallel()
 
+	// A shebang: Windows has no executable bit, and that is the intent a Linux
+	// host can act on.
 	source := filepath.Join(t.TempDir(), "collector")
-	if err := os.WriteFile(source, []byte("binary"), 0o755); err != nil {
+	if err := os.WriteFile(source, []byte("#!/bin/sh\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	session := &mediaSession{}
@@ -209,6 +211,26 @@ func TestStaticMediaPreservesExecutableIntent(t *testing.T) {
 	}
 	if session.mode.Perm() != 0o555 {
 		t.Errorf("remote mode = %o, want 555", session.mode.Perm())
+	}
+}
+
+func TestStaticMediaWithoutExecutableIntentIsNotExecutable(t *testing.T) {
+	t.Parallel()
+
+	source := filepath.Join(t.TempDir(), "document")
+	if err := os.WriteFile(source, []byte("plain bytes"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	session := &mediaSession{}
+	machine := &machine{spec: target.Spec{Backend: "ssh"}, session: session}
+
+	if err := machine.Stage(context.Background(), []target.Media{{
+		Source: source, Dest: "/var/tmp/document", ReadOnly: true,
+	}}); err != nil {
+		t.Fatalf("Stage: %v", err)
+	}
+	if session.mode.Perm() != 0o444 {
+		t.Errorf("remote mode = %o, want 444", session.mode.Perm())
 	}
 }
 

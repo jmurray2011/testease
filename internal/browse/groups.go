@@ -11,6 +11,7 @@ import (
 
 	"github.com/jmurray2011/testease/internal/batch"
 	"github.com/jmurray2011/testease/internal/campaign"
+	"github.com/jmurray2011/testease/internal/judge"
 )
 
 // Batch is one batch under RUNS_DIR/batches, as its runner last saved it, with
@@ -40,12 +41,15 @@ type BatchTest struct {
 	RunID    string `json:"run_id,omitempty"`
 	ExitCode int    `json:"exit_code"`
 
-	Judge         string `json:"judge,omitempty"`
-	Version       string `json:"version,omitempty"`
-	Verdict       string `json:"verdict,omitempty"`
-	JudgeStatus   string `json:"judge_status,omitempty"`
-	JudgeError    string `json:"judge_error,omitempty"`
-	VerdictPassed bool   `json:"verdict_passed,omitempty"`
+	Judge       string `json:"judge,omitempty"`
+	Version     string `json:"version,omitempty"`
+	Verdict     string `json:"verdict,omitempty"`
+	JudgeStatus string `json:"judge_status,omitempty"`
+	JudgeError  string `json:"judge_error,omitempty"`
+	// VerdictShipped says the judge is one this testease ships, so its pass
+	// set is known; VerdictPassed means nothing without it.
+	VerdictShipped bool `json:"verdict_shipped,omitempty"`
+	VerdictPassed  bool `json:"verdict_passed,omitempty"`
 }
 
 // Batches reads every batch under runsDir, newest first by id. No batches
@@ -105,6 +109,8 @@ func readBatch(runsDir, id string) Batch {
 	for i, j := range judgment.Tests {
 		t := &b.Tests[i]
 		t.Judge, t.Version, t.Verdict, t.JudgeStatus, t.JudgeError = j.Judge, j.Version, j.Verdict, j.Status, j.Error
+		_, unknown := judge.ByName(j.Judge)
+		t.VerdictShipped = j.Judge != "" && unknown == nil
 		t.VerdictPassed = j.Verdict != "" && passedByShipped(j.Judge, j.Verdict)
 	}
 	return b

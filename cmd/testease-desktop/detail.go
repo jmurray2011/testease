@@ -37,6 +37,14 @@ type detailView struct {
 	stderr    *widget.TextGrid
 	facts     *fyne.Container
 	factLines []string
+	tabs      *container.AppTabs
+	timeline  *timelineChart
+	// search looks through the output tab showing; outScroll and errScroll
+	// hold stdout and stderr, so a match can be scrolled to.
+	search *outputSearch
+	// trends follow each fact back through the scenario's earlier runs.
+	trends               map[factKey]factTrend
+	outScroll, errScroll *container.Scroll
 
 	meta, verdicts, targets, notes []string
 	content                        fyne.CanvasObject
@@ -88,13 +96,13 @@ func newDetailViewFrom(dir, backLabel string, back func()) (*detailView, error) 
 			seq.Importance = widget.LowImportance
 			label := widget.NewLabel("")
 			label.Truncation = fyne.TextTruncateEllipsis
-			return container.NewBorder(nil, nil, seq, container.NewCenter(newPill("", pillNeutral)), label)
+			return container.NewBorder(nil, nil, container.NewGridWrap(fyne.NewSize(34, seq.MinSize().Height), seq), container.NewCenter(newPill("", pillNeutral)), label)
 		},
 		func(i widget.ListItemID, o fyne.CanvasObject) {
 			s := d.StepList[i]
 			row := o.(*fyne.Container)
 			row.Objects[0].(*widget.Label).SetText(s.Label)
-			row.Objects[1].(*widget.Label).SetText(fmt.Sprint(s.Seq))
+			row.Objects[1].(*fyne.Container).Objects[0].(*widget.Label).SetText(fmt.Sprint(s.Seq))
 			p := row.Objects[2].(*fyne.Container).Objects[0].(*pill)
 			p.Set(stepStatus(s), statusKind(s.Status))
 		},
@@ -121,12 +129,24 @@ func newDetailViewFrom(dir, backLabel string, back func()) (*detailView, error) 
 	v.stderr = widget.NewTextGrid()
 	v.stderr.Scroll = fyne.ScrollNone
 	v.facts = container.NewVBox()
-	tabs := container.NewAppTabs(
-		container.NewTabItem("stdout", container.NewScroll(container.NewPadded(v.stdout))),
-		container.NewTabItem("stderr", container.NewScroll(container.NewPadded(v.stderr))),
+	v.outScroll = container.NewScroll(container.NewPadded(v.stdout))
+	v.errScroll = container.NewScroll(container.NewPadded(v.stderr))
+	v.tabs = container.NewAppTabs(
+		container.NewTabItem("stdout", v.outScroll),
+		container.NewTabItem("stderr", v.errScroll),
 		container.NewTabItem("Facts", container.NewVScroll(container.NewPadded(v.facts))),
 	)
-	center := container.NewBorder(container.NewVBox(v.stepTitle, v.stepMeta, widget.NewSeparator()), nil, nil, nil, tabs)
+	// The whole run against its own clock, from the record's event times.
+	if rec, err := record.Read(d.Dir); err == nil {
+		if spans, total := timeline(rec.Events); len(spans) > 0 {
+			v.timeline = newTimelineChart(spans, total, v.openStep)
+			v.tabs.Append(container.NewTabItem("Timeline", container.NewVScroll(container.NewPadded(v.timeline))))
+		}
+	}
+	v.trends = factTrends(d, earlierRuns(d))
+	v.search = newOutputSearch(v.shownOutput)
+	v.tabs.OnSelected = func(*container.TabItem) { v.search.apply() }
+	center := container.NewBorder(container.NewVBox(v.stepTitle, v.stepMeta, v.search.bar, widget.NewSeparator()), nil, nil, nil, v.tabs)
 
 	// What judges, targets and readers said, on the right.
 	v.verdicts = verdictParts(d)
@@ -218,12 +238,37 @@ func stepStatus(s browse.Step) string {
 	return s.Status
 }
 
+// shownOutput is the output tab showing, if one is.
+func (v *detailView) shownOutput() (*widget.TextGrid, *container.Scroll) {
+	switch v.tabs.SelectedIndex() {
+	case 0:
+		return v.stdout, v.outScroll
+	case 1:
+		return v.stderr, v.errScroll
+	}
+	return nil, nil
+}
+
+// openStep shows the step a timeline row names, with its output.
+func (v *detailView) openStep(seq int) {
+	for i, s := range v.d.StepList {
+		if s.Seq == seq {
+			v.steps.Select(i)
+			v.tabs.SelectIndex(0)
+			return
+		}
+	}
+}
+
 func (v *detailView) selectStep(i widget.ListItemID) {
 	if i < 0 || i >= len(v.d.StepList) {
 		return
 	}
 	v.selected = i
 	s := v.d.StepList[i]
+	if v.timeline != nil {
+		v.timeline.Select(s.Seq)
+	}
 	v.stepTitle.SetText(fmt.Sprintf("%d · %s", s.Seq, s.Label))
 
 	var parts []string
@@ -240,6 +285,9 @@ func (v *detailView) selectStep(i widget.ListItemID) {
 
 	v.stdout.SetText(v.output(s.Stdout, "stdout"))
 	v.stderr.SetText(v.output(s.Stderr, "stderr"))
+	if v.search != nil {
+		v.search.apply()
+	}
 
 	v.factLines = v.factLines[:0]
 	v.facts.RemoveAll()
@@ -262,7 +310,18 @@ func (v *detailView) selectStep(i widget.ListItemID) {
 		val := widget.NewLabelWithStyle(value, fyne.TextAlignLeading, fyne.TextStyle{Monospace: true})
 		val.Selectable = true
 		val.Wrapping = fyne.TextWrapWord
-		v.facts.Add(container.NewBorder(nil, nil, container.NewGridWrap(fyne.NewSize(200, key.MinSize().Height), key), nil, val))
+		// The name and its trend on one line, the value under them across the
+		// whole width, so a long name or value never crowds the other.
+		var trend fyne.CanvasObject = widget.NewLabel("")
+		if tr, ok := v.trends[factKey{s.Label, f.Key}]; ok && !looksSecret(f.Key) {
+			trend = trendView(f.Key, tr)
+		}
+		key.Wrapping = fyne.TextWrapBreak
+		v.facts.Add(container.NewVBox(
+			container.NewBorder(nil, nil, nil, container.NewGridWrap(fyne.NewSize(trendColumn, sparkHeight+12), trend), key),
+			val,
+		))
+		v.facts.Add(widget.NewSeparator())
 	}
 	v.facts.Refresh()
 }

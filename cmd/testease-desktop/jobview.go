@@ -42,12 +42,13 @@ type jobView struct {
 	log      *widget.TextGrid
 	stop     *widget.Button
 	open     *widget.Button
+	targets  *widget.Button
 	content  fyne.CanvasObject
 	openRun  func(dir string)
 	lastLogN int
 }
 
-func newJobView(title string, args []string, runsDir string, back func(), openRun func(string)) *jobView {
+func newJobView(title string, args []string, runsDir string, back, showTargets func(), openRun func(string)) *jobView {
 	v := &jobView{title: title, args: args, runsDir: runsDir, started: time.Now(), openRun: openRun}
 	for _, a := range args {
 		if a == "run" {
@@ -59,7 +60,11 @@ func newJobView(title string, args []string, runsDir string, back func(), openRu
 	v.stop = widget.NewButtonWithIcon("Stop", theme.MediaStopIcon(), v.stopOrKill)
 	v.open = widget.NewButtonWithIcon("Open record", theme.NavigateNextIcon(), v.openRecord)
 	v.open.Disable()
-	top := backHeader("Activity", back, title, container.NewCenter(v.status), v.stop, v.open)
+	// A run that did not finish cleanly keeps its targets; this is where
+	// they are seen and cleaned up.
+	v.targets = widget.NewButtonWithIcon("Kept targets…", theme.ComputerIcon(), showTargets)
+	v.targets.Hide()
+	top := backHeader("Activity", back, title, container.NewCenter(v.status), v.stop, v.open, v.targets)
 	command := note("testease " + strings.Join(args, " "))
 
 	v.steps = listing(func() int { return len(v.s.Steps) }, jobTitles, jobWidths, -1, v.cell, nil)
@@ -116,6 +121,9 @@ func (v *jobView) render() {
 	}
 	if v.s.Done && v.recordDir() != "" {
 		v.open.Enable()
+	}
+	if v.isRun && v.s.Done && v.s.Status != "" && v.s.Status != string(record.StatusMeasured) {
+		v.targets.Show()
 	}
 	out := v.s.Log
 	if !v.isRun && v.s.Stdout != "" {

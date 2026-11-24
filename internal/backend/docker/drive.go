@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jmurray2011/testease/internal/backend/filemode"
 	"github.com/jmurray2011/testease/internal/target"
 )
 
@@ -369,6 +370,10 @@ func pathArchive(source, destination string, uid, gid int, readOnly, requireDire
 		header.Name = name
 		header.Uid = uid
 		header.Gid = gid
+		if header.Mode&0o111 == 0 && filemode.Executable(current, entry) {
+			// A runner without an executable bit still meant this to run.
+			header.Mode |= 0o111
+		}
 		if readOnly {
 			header.Mode &^= 0o222
 		}

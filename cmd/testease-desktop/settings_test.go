@@ -30,16 +30,19 @@ func TestTheRunsDirectoryComesFromFlagThenEnvironmentThenMemory(t *testing.T) {
 	}
 }
 
-// The sidebar is narrow. A runs directory is shown by its last two folders,
-// whole, rather than wrapped mid-word.
-func TestTheSidebarShowsTheEndOfTheRunsDirectory(t *testing.T) {
+// The sidebar is narrow. The runs directory is shown as its own folder name,
+// whole, with where it lives on a second line, rather than wrapped mid-word or
+// cut off.
+func TestTheSidebarShowsTheRunsDirectorysNameWhole(t *testing.T) {
 	t.Parallel()
 
-	long := filepath.Join(string(filepath.Separator)+"Users", "jmurr", "projects", "personal", "testease-scenarios", "scenario-runs")
-	if got, want := shortPath(long), "…"+string(filepath.Separator)+filepath.Join("testease-scenarios", "scenario-runs"); got != want {
-		t.Errorf("shortPath(%q) = %q, want %q", long, got, want)
+	sep := string(filepath.Separator)
+	long := filepath.Join(sep+"Users", "jmurr", "projects", "personal", "testease-scenarios", "scenario-runs")
+	name, in := sidebarPath(long)
+	if name != "scenario-runs" || in != "in …"+sep+"testease-scenarios" {
+		t.Errorf("sidebarPath(%q) = %q, %q", long, name, in)
 	}
-	if got := shortPath(filepath.Join("runs")); got != "runs" {
-		t.Errorf("a short path was shortened to %q", got)
+	if name, in := sidebarPath("runs"); name != "runs" || in != "" {
+		t.Errorf("sidebarPath(runs) = %q, %q", name, in)
 	}
 }

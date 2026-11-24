@@ -39,6 +39,10 @@ type detailView struct {
 	factLines []string
 	tabs      *container.AppTabs
 	timeline  *timelineChart
+	// search looks through the output tab showing; outScroll and errScroll
+	// hold stdout and stderr, so a match can be scrolled to.
+	search               *outputSearch
+	outScroll, errScroll *container.Scroll
 
 	meta, verdicts, targets, notes []string
 	content                        fyne.CanvasObject
@@ -123,9 +127,11 @@ func newDetailViewFrom(dir, backLabel string, back func()) (*detailView, error) 
 	v.stderr = widget.NewTextGrid()
 	v.stderr.Scroll = fyne.ScrollNone
 	v.facts = container.NewVBox()
+	v.outScroll = container.NewScroll(container.NewPadded(v.stdout))
+	v.errScroll = container.NewScroll(container.NewPadded(v.stderr))
 	v.tabs = container.NewAppTabs(
-		container.NewTabItem("stdout", container.NewScroll(container.NewPadded(v.stdout))),
-		container.NewTabItem("stderr", container.NewScroll(container.NewPadded(v.stderr))),
+		container.NewTabItem("stdout", v.outScroll),
+		container.NewTabItem("stderr", v.errScroll),
 		container.NewTabItem("Facts", container.NewVScroll(container.NewPadded(v.facts))),
 	)
 	// The whole run against its own clock, from the record's event times.
@@ -135,7 +141,9 @@ func newDetailViewFrom(dir, backLabel string, back func()) (*detailView, error) 
 			v.tabs.Append(container.NewTabItem("Timeline", container.NewVScroll(container.NewPadded(v.timeline))))
 		}
 	}
-	center := container.NewBorder(container.NewVBox(v.stepTitle, v.stepMeta, widget.NewSeparator()), nil, nil, nil, v.tabs)
+	v.search = newOutputSearch(v.shownOutput)
+	v.tabs.OnSelected = func(*container.TabItem) { v.search.apply() }
+	center := container.NewBorder(container.NewVBox(v.stepTitle, v.stepMeta, v.search.bar, widget.NewSeparator()), nil, nil, nil, v.tabs)
 
 	// What judges, targets and readers said, on the right.
 	v.verdicts = verdictParts(d)
@@ -227,6 +235,17 @@ func stepStatus(s browse.Step) string {
 	return s.Status
 }
 
+// shownOutput is the output tab showing, if one is.
+func (v *detailView) shownOutput() (*widget.TextGrid, *container.Scroll) {
+	switch v.tabs.SelectedIndex() {
+	case 0:
+		return v.stdout, v.outScroll
+	case 1:
+		return v.stderr, v.errScroll
+	}
+	return nil, nil
+}
+
 // openStep shows the step a timeline row names, with its output.
 func (v *detailView) openStep(seq int) {
 	for i, s := range v.d.StepList {
@@ -263,6 +282,9 @@ func (v *detailView) selectStep(i widget.ListItemID) {
 
 	v.stdout.SetText(v.output(s.Stdout, "stdout"))
 	v.stderr.SetText(v.output(s.Stderr, "stderr"))
+	if v.search != nil {
+		v.search.apply()
+	}
 
 	v.factLines = v.factLines[:0]
 	v.facts.RemoveAll()

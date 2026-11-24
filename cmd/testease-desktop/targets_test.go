@@ -369,3 +369,29 @@ func TestAnAnswerFromWhereYouNoLongerLookIsDropped(t *testing.T) {
 		t.Errorf("showing %+v, want only EC2's answer", v.all)
 	}
 }
+
+// In every context, the ones that answered with nothing are nothing standing;
+// the ones that did not answer are said beside it.
+func TestEveryContextSaysTheOnesThatAnsweredHaveNothingStanding(t *testing.T) {
+	test.NewTempApp(t)
+
+	cli := &fakeCLI{answers: map[string]string{"targets": `{"targets": [], "notices": ["skipped docker:dockersrv: no answer within 30s"]}`}}
+	v := newFakeTargets(t, cli)
+	v.choose(placeDockerAll)
+	if !strings.Contains(v.message.Text, "No targets standing in the contexts that answered") || !strings.Contains(v.message.Text, "dockersrv") {
+		t.Errorf("message = %q", v.message.Text)
+	}
+}
+
+// While a look is out, the count of the last one is not shown as this one's.
+func TestTheCountIsClearedWhileLooking(t *testing.T) {
+	test.NewTempApp(t)
+
+	cli := &fakeCLI{answers: map[string]string{"targets": standingJSON}}
+	v := newFakeTargets(t, cli)
+	v.async = func(func()) {}
+	v.reload()
+	if v.count.Text != "" {
+		t.Errorf("count = %q while looking", v.count.Text)
+	}
+}

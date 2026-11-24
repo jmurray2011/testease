@@ -289,6 +289,7 @@ func (v *targetsView) reload() {
 	v.looks++
 	look := v.looks
 	v.all = nil
+	v.count.SetText("")
 	v.table.Refresh()
 	v.clearPick()
 	if need := v.missing(); need != "" {
@@ -343,10 +344,13 @@ func (v *targetsView) showNotes() {
 	switch {
 	case len(v.all) == 0 && len(v.notices) == 0:
 		lines = append(lines, "No targets standing.")
+	case len(v.all) == 0 && v.place == placeDockerAll:
+		// The contexts that answered had nothing; the rest are said below.
+		lines = append(lines, "No targets standing in the contexts that answered.")
 	case len(v.all) == 0:
-		// Something could not be looked at, so nothing found is not
-		// nothing standing.
-		lines = append(lines, "Nothing found where testease could look:")
+		// The one place there was could not be looked at, so nothing found
+		// is not nothing standing.
+		lines = append(lines, "testease could not look:")
 	}
 	lines = append(lines, v.notices...)
 	if len(lines) == 0 {

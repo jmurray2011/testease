@@ -119,3 +119,27 @@ func backHeader(backLabel string, back func(), id string, right ...fyne.CanvasOb
 		container.NewHBox(right...),
 		name)
 }
+
+// action is a button for something the shell does from a screen. It stays
+// hidden until the shell says what it does, so a screen built on its own
+// offers nothing it cannot do.
+type action struct {
+	*widget.Button
+	do func()
+}
+
+func newAction(label string, icon fyne.Resource) *action {
+	a := &action{}
+	a.Button = widget.NewButtonWithIcon(label, icon, func() {
+		if a.do != nil {
+			a.do()
+		}
+	})
+	a.Hide()
+	return a
+}
+
+func (a *action) set(do func()) {
+	a.do = do
+	a.Show()
+}

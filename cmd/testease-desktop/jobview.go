@@ -37,25 +37,23 @@ type jobView struct {
 	j       *job
 	s       jobState
 
-	status   *pill
-	steps    *widget.Table
-	log      *widget.TextGrid
-	stop     *widget.Button
-	open     *widget.Button
-	targets  *widget.Button
-	content  fyne.CanvasObject
-	openRun  func(dir string)
+	status  *pill
+	steps   *widget.Table
+	log     *widget.TextGrid
+	stop    *widget.Button
+	open    *widget.Button
+	targets *widget.Button
+	content fyne.CanvasObject
+	openRun func(dir string)
+	// record is set for a job about a record already on disk, like a judge.
+	record   string
 	lastLogN int
 }
 
 func newJobView(title string, args []string, runsDir string, back, showTargets func(), openRun func(string)) *jobView {
 	v := &jobView{title: title, args: args, runsDir: runsDir, started: time.Now(), openRun: openRun}
-	for _, a := range args {
-		if a == "run" {
-			v.isRun = true
-			break
-		}
-	}
+	// Only a scenario run reports its steps; anything else is its output.
+	v.isRun = command(args) == "run"
 	v.status = newPill("starting", pillActive)
 	v.stop = widget.NewButtonWithIcon("Stop", theme.MediaStopIcon(), v.stopOrKill)
 	v.open = widget.NewButtonWithIcon("Open record", theme.NavigateNextIcon(), v.openRecord)
@@ -167,8 +165,12 @@ func (v *jobView) stopOrKill() {
 	}
 }
 
-// recordDir is the record the run wrote, once it is on disk.
+// recordDir is the record the job is about: the one a judge job read, or the
+// one a run wrote, once it is on disk.
 func (v *jobView) recordDir() string {
+	if v.record != "" {
+		return v.record
+	}
 	if v.s.RunID == "" || !filepath.IsLocal(v.s.RunID) {
 		return ""
 	}

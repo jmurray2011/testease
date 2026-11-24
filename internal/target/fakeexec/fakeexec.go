@@ -70,7 +70,7 @@ func (c Call) InContainer(path string) string {
 type Behaviour func(Call) int
 
 const (
-	paramsFile = "fake.json"
+	paramsFile   = "fake.json"
 	behaviourKey = "behaviour"
 
 	// warmEnv makes a fake exit at once without acting out its behaviour. The

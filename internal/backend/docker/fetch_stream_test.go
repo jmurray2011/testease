@@ -24,7 +24,10 @@ func TestFetchReturnsAStreamBeforeTheRemoteCommandCompletes(t *testing.T) {
 
 	client := fakeDocker(t, "exec-streams-then-sleeps", nil)
 	session := &Session{Client: client, Container: "box"}
-	ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
+	// The remote command takes ten seconds. Fetch returning well inside that
+	// is a stream; a fixed tenth of a second measured process start on a
+	// loaded Windows runner as much as streaming, and failed there at 0.6 s.
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
 
 	started := time.Now()
@@ -32,7 +35,7 @@ func TestFetchReturnsAStreamBeforeTheRemoteCommandCompletes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Fetch waited for command completion: %v", err)
 	}
-	if elapsed := time.Since(started); elapsed > 100*time.Millisecond {
+	if elapsed := time.Since(started); elapsed > 5*time.Second {
 		t.Fatalf("Fetch returned after %s, want a live stream immediately", elapsed)
 	}
 

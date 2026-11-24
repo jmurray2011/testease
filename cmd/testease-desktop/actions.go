@@ -274,7 +274,7 @@ func (s *shell) chooseRender(dir string) {
 }
 
 func (s *shell) renderRecord(dir, choice string) {
-	s.startJob("render "+filepath.Base(dir)+" ("+choice+")", renderArgs(s.dir, dir, choice))
+	s.startRecordJob(dir, "render "+filepath.Base(dir)+" ("+choice+")", renderArgs(s.dir, dir, choice))
 }
 
 // chooseCompare asks which other runs of the same scenario to compare a
@@ -311,5 +311,13 @@ func (s *shell) chooseCompare(dir string) {
 }
 
 func (s *shell) compareRecords(dir string, others []string) {
-	s.startJob("compare "+filepath.Base(dir), compareArgs(s.dir, dir, others))
+	s.startRecordJob(dir, "compare "+filepath.Base(dir), compareArgs(s.dir, dir, others))
+}
+
+// startRecordJob starts a job about a record already on disk, which Open
+// record opens whatever the command printed.
+func (s *shell) startRecordJob(dir, title string, args []string) {
+	if jv := s.startJob(title, args); jv != nil {
+		jv.record = dir
+	}
 }

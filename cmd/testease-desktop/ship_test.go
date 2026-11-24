@@ -126,12 +126,12 @@ func TestRenderCompareAndPackageStartJobs(t *testing.T) {
 	}
 
 	s.renderRecord(rec, "table")
-	if jv := waitJob(t, s); !slices.Equal(jv.args, renderArgs(runs, rec, "table")) {
-		t.Errorf("render args %q", jv.args)
+	if jv := waitJob(t, s); !slices.Equal(jv.args, renderArgs(runs, rec, "table")) || jv.record != rec {
+		t.Errorf("render args %q, record %q: Open record should open what was rendered", jv.args, jv.record)
 	}
 	s.compareRecords(rec, []string{older})
-	if jv := waitJob(t, s); !slices.Equal(jv.args, compareArgs(runs, rec, []string{older})) {
-		t.Errorf("compare args %q", jv.args)
+	if jv := waitJob(t, s); !slices.Equal(jv.args, compareArgs(runs, rec, []string{older})) || jv.record != rec {
+		t.Errorf("compare args %q, record %q", jv.args, jv.record)
 	}
 
 	upgradeCampaign(t, runs, true)

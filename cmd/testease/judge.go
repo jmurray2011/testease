@@ -237,7 +237,7 @@ func validJudgePart(value string) bool {
 
 func passedFor(cmd *cobra.Command, verdict string, external bool) bool {
 	if !external {
-		return passed(verdict)
+		return judge.Passed(verdict)
 	}
 	allowed, err := cmd.Flags().GetStringArray("pass-verdict")
 	if err != nil {
@@ -361,16 +361,6 @@ func declaredJudge(rec *record.Record) string {
 		return started.Judge.Name + "@" + started.Judge.Version
 	}
 	return ""
-}
-
-// passed is whether a verdict is in its judge's pass set.
-func passed(verdict string) bool {
-	switch verdict {
-	case judge.Pass, judge.Promote, judge.Established, judge.Restored, judge.ReleaseReady:
-		return true
-	default:
-		return false
-	}
 }
 
 // promote advances the baseline, when asked and when the verdict says to.

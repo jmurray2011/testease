@@ -50,12 +50,17 @@ type Target struct {
 // Verdict is one verdict file, as written. Current says whether the events it
 // judged are the events on disk now; one that is not current is not this
 // record's verdict, and a reader must not show it as though it were.
+//
+// Passed is meaningful only when Shipped: a shipped judge's pass set is known
+// here, and an external judge's is its caller's to say, so it is not guessed.
 type Verdict struct {
 	Judge    string    `json:"judge"`
 	Version  string    `json:"version"`
 	Verdict  string    `json:"verdict"`
 	JudgedAt time.Time `json:"judged_at"`
 	Current  bool      `json:"current"`
+	Shipped  bool      `json:"shipped"`
+	Passed   bool      `json:"passed"`
 }
 
 // List reads every record directly under dir, sorted by run id - scenario then
@@ -231,7 +236,11 @@ func verdicts(dir, events string) []Verdict {
 		if err := json.Unmarshal(body, &v); err != nil || v.Judge == "" {
 			continue
 		}
+		_, unknown := judge.ByName(v.Judge)
+		shipped := unknown == nil
 		found = append(found, Verdict{
+			Shipped:  shipped,
+			Passed:   shipped && judge.Passed(v.Verdict),
 			Judge:    v.Judge,
 			Version:  v.Version,
 			Verdict:  v.Verdict,

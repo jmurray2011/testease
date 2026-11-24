@@ -54,7 +54,7 @@ func doReproduce(cmd *cobra.Command, args []string) error {
 		}
 		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "comparison %s %s: %s\n", id, outcome.String(), path)
 	}
-	if !passed(verdict.Verdict) {
+	if !judge.Passed(verdict.Verdict) {
 		return &verdictError{verdict: verdict.Verdict, judge: verdict.Judge, version: verdict.Version}
 	}
 	return nil

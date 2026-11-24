@@ -16,6 +16,7 @@ import (
 	"github.com/jmurray2011/testease/internal/platform/ec2"
 	"github.com/jmurray2011/testease/internal/platform/ecs"
 	"github.com/jmurray2011/testease/internal/reap"
+	"github.com/jmurray2011/testease/internal/runnerid"
 )
 
 func reapCmd() *cobra.Command {
@@ -34,7 +35,7 @@ func reapCmd() *cobra.Command {
 	cmd.Flags().StringArray("docker-contexts", nil, "docker contexts to look in (repeatable); the current one by default")
 	cmd.Flags().Bool("all-contexts", false, "look in every docker context configured here")
 	cmd.Flags().String("platform", "docker", "target platform to reap: docker, ec2 or ecs")
-	cmd.Flags().String("runner", runnerName(), "owner label of provisioned targets to inspect")
+	cmd.Flags().String("runner", runnerid.Runner(), "owner label of provisioned targets to inspect")
 	cmd.Flags().String("aws-profile", os.Getenv("TESTEASE_AWS_PROFILE"), "AWS profile for platform reap")
 	cmd.Flags().String("aws-region", os.Getenv("TESTEASE_AWS_REGION"), "AWS region for platform reap")
 	cmd.Flags().String("ecs-cluster", "", "ECS cluster to inspect when --platform ecs")
@@ -77,7 +78,7 @@ func doReap(cmd *cobra.Command, _ []string) error {
 	contexts, contextNotices := dockerContexts(cmd, log)
 	allUsers, _ := cmd.Flags().GetBool("all-users")
 	host, _ := os.Hostname()
-	self := reap.Runner{User: os.Getenv("USER"), Host: host, AllUsers: allUsers}
+	self := reap.Runner{User: runnerid.User(), Host: host, AllUsers: allUsers}
 
 	report := reapReport{Targets: []reapTarget{}, Removed: []string{}, Notices: contextNotices}
 

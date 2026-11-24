@@ -22,6 +22,7 @@ import (
 	"github.com/jmurray2011/testease/internal/provider/static"
 	"github.com/jmurray2011/testease/internal/record"
 	"github.com/jmurray2011/testease/internal/runner"
+	"github.com/jmurray2011/testease/internal/runnerid"
 	"github.com/jmurray2011/testease/internal/scenario"
 	"github.com/jmurray2011/testease/internal/store"
 	"github.com/jmurray2011/testease/internal/target"
@@ -205,7 +206,7 @@ func doRun(cmd *cobra.Command, args []string) error {
 	docker := dockerprovider.New(dockerprovider.Options{
 		Client:     client,
 		RunID:      runID,
-		Runner:     runnerName(),
+		Runner:     runnerid.Runner(),
 		Instrument: printInstrument,
 		Notices:    cmd.ErrOrStderr(),
 		Log:        log,
@@ -215,7 +216,8 @@ func doRun(cmd *cobra.Command, args []string) error {
 	oneShot := hypervprovider.New(hypervprovider.Options{
 		Client:      windowsClient,
 		RunID:       runID,
-		Runner:      runnerName(),
+		Runner:      runnerid.Runner(),
+		User:        runnerid.User(),
 		ScratchRoot: filepath.Join(runsDir, runtimeWorkDir, runID),
 		Memory:      flagString(cmd, "win-memory"),
 		Log:         log,
@@ -229,14 +231,14 @@ func doRun(cmd *cobra.Command, args []string) error {
 		Profile: binding.Profile,
 		Region:  binding.Region,
 		RunID:   runID,
-		Runner:  runnerName(),
+		Runner:  runnerid.Runner(),
 		Log:     log,
 	})
 	endpoint := endpointprovider.New(endpointprovider.Options{
-		RunID: runID, Runner: runnerName(),
+		RunID: runID, Runner: runnerid.Runner(),
 	})
 	configuredProviders := providers(docker, oneShot, stat, state, endpoint)
-	for name, provider := range cloudProviders(binding, runID, runnerName(), flagString(cmd, "ssm-transfer-store"), log) {
+	for name, provider := range cloudProviders(binding, runID, runnerid.Runner(), flagString(cmd, "ssm-transfer-store"), log) {
 		configuredProviders[name] = provider
 	}
 	var provision map[string]string
@@ -520,11 +522,6 @@ func instrument(cmd *cobra.Command) *dockerprovider.Instrument {
 	}
 }
 
-func runnerName() string {
-	host, _ := os.Hostname()
-	return fmt.Sprintf("%s@%s", os.Getenv("USER"), host)
-}
-
 // providers is every way a host can come to exist. A scenario names one; if it
 // names something else it is told what there is, rather than being run against
 // whatever happened to be registered.
@@ -585,7 +582,7 @@ func staticProvider(cmd *cobra.Command, runID string, log *slog.Logger, printIns
 		},
 		Instrument: printInstrument,
 		RunID:      runID,
-		Runner:     runnerName(),
+		Runner:     runnerid.Runner(),
 		Log:        log,
 	}), nil
 }

@@ -217,7 +217,7 @@ func (s *shell) showHome() {
 
 // showScenarioRuns lists one scenario's runs.
 func (s *shell) showScenarioRuns(name string) {
-	s.runs.filter.SetText(name)
+	s.runs.onlyScenario(name)
 	s.showRuns()
 }
 

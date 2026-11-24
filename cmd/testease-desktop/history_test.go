@@ -85,7 +85,8 @@ func TestFlakinessCountsChangesBetweenJudgedRuns(t *testing.T) {
 		t.Errorf("steady flakiness = %v", steady.Flakiness())
 	}
 	flapping := histories([]browse.Run{
-		judgedRun("s-1", "s", true), {RunID: "s-2", Scenario: "s", Status: "measured"},
+		judgedRun("s-1", "s", true),
+		{RunID: "s-2", Scenario: "s", Status: "measured"},
 		judgedRun("s-3", "s", false), judgedRun("s-4", "s", true),
 	})[0]
 	if flapping.Flakiness() != 1 {
@@ -99,8 +100,10 @@ func TestFlakinessCountsChangesBetweenJudgedRuns(t *testing.T) {
 
 func TestPassRateIsOfJudgedRunsOnly(t *testing.T) {
 	h := histories([]browse.Run{
-		judgedRun("s-1", "s", true), {RunID: "s-2", Scenario: "s", Status: "probe-fail"},
-		judgedRun("s-3", "s", false), {RunID: "s-4", Scenario: "s", Status: "measured"},
+		judgedRun("s-1", "s", true),
+		{RunID: "s-2", Scenario: "s", Status: "probe-fail"},
+		judgedRun("s-3", "s", false),
+		{RunID: "s-4", Scenario: "s", Status: "measured"},
 	})[0]
 	rate, ok := h.PassRate()
 	if !ok || rate != 0.5 {

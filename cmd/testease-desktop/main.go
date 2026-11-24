@@ -76,7 +76,8 @@ func main() {
 type navSection int
 
 const (
-	sectionRuns navSection = iota
+	sectionHome navSection = iota
+	sectionRuns
 	sectionBatches
 	sectionCampaigns
 	sectionScenarios
@@ -86,7 +87,7 @@ const (
 	sections
 )
 
-var sectionNames = [sections]string{"Runs", "Batches", "Campaigns", "Scenarios", "Activity", "Targets", "Settings"}
+var sectionNames = [sections]string{"Home", "Runs", "Batches", "Campaigns", "Scenarios", "Activity", "Targets", "Settings"}
 
 // shell is the window: sections on the left, the current screen on the right.
 type shell struct {
@@ -95,6 +96,7 @@ type shell struct {
 
 	dir, from string
 	section   navSection
+	home      *homeView
 	runs      *runsView
 	batches   *batchesView
 	campaigns *campaignsView
@@ -119,7 +121,7 @@ func newShell(w fyne.Window, dir, from string, remember func(string)) *shell {
 
 	name := widget.NewLabelWithStyle("testease", fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 	nav := container.NewVBox(name)
-	shows := [sections]func(){s.showRuns, s.showBatches, s.showCampaigns, s.showScenarios, s.showActivity, s.showTargets, s.showSettings}
+	shows := [sections]func(){s.showHome, s.showRuns, s.showBatches, s.showCampaigns, s.showScenarios, s.showActivity, s.showTargets, s.showSettings}
 	for i := range sections {
 		b := widget.NewButton(sectionNames[i], shows[i])
 		b.Alignment = widget.ButtonAlignLeading
@@ -185,12 +187,13 @@ func (s *shell) setDir(dir, from string) {
 		name, in := sidebarPath(dir)
 		s.where.SetText(strings.TrimSpace(name + "\n" + in + "\n(" + from + ")"))
 	}
+	s.home = newHomeView(dir, func(rec string) { s.openRecord(rec, "Home", s.showHome) }, s.showScenarioRuns)
 	s.runs = newRunsView(dir, func(rec string) { s.openRecord(rec, "Runs", s.showRuns) })
 	s.batches = newBatchesView(dir, s.openBatch)
 	s.batches.run.set(s.chooseBatchFile)
 	s.campaigns = newCampaignsView(dir, func(c browse.Campaign) { s.openCampaign(c.ID) })
 	s.campaigns.run.set(s.chooseCampaign)
-	s.showRuns()
+	s.showHome()
 }
 
 // highlight marks the section a screen belongs to.
@@ -204,6 +207,18 @@ func (s *shell) highlight(sec navSection) {
 		}
 		b.Refresh()
 	}
+}
+
+func (s *shell) showHome() {
+	s.highlight(sectionHome)
+	s.home.reload()
+	s.show(s.home, s.home.content)
+}
+
+// showScenarioRuns lists one scenario's runs.
+func (s *shell) showScenarioRuns(name string) {
+	s.runs.filter.SetText(name)
+	s.showRuns()
 }
 
 func (s *shell) showRuns() {
@@ -280,6 +295,8 @@ func (s *shell) show(view any, screen fyne.CanvasObject) {
 // looking at.
 func (s *shell) tick() {
 	switch v := s.current.(type) {
+	case *homeView:
+		v.reload()
 	case *runsView:
 		v.reload()
 	case *batchesView:

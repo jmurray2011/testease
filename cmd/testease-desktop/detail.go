@@ -58,6 +58,8 @@ type detailView struct {
 	// are in the cells' own records, not the parent's.
 	cells      *widget.List
 	onOpenCell func(dir string)
+	// heat is a matrix run's cells as a grid.
+	heat *heatmapView
 
 	// judge reads the record again with its judge; render shows it in one
 	// of its views; compare asks which stable facts differ from other runs.
@@ -137,7 +139,16 @@ func newDetailViewFrom(dir, backLabel string, back func()) (*detailView, error) 
 		container.NewTabItem("Facts", container.NewVScroll(container.NewPadded(v.facts))),
 	)
 	// The whole run against its own clock, from the record's event times.
+	var matrix *record.Matrix
 	if rec, err := record.Read(d.Dir); err == nil {
+		for _, e := range rec.Latest().Events {
+			if e.Kind == record.KindRunStarted {
+				if started, err := record.Decode[record.RunStarted](e); err == nil {
+					matrix = started.Matrix
+				}
+				break
+			}
+		}
 		if spans, total := timeline(rec.Events); len(spans) > 0 {
 			v.timeline = newTimelineChart(spans, total, v.openStep)
 			v.tabs.Append(container.NewTabItem("Timeline", container.NewVScroll(container.NewPadded(v.timeline))))
@@ -146,14 +157,18 @@ func newDetailViewFrom(dir, backLabel string, back func()) (*detailView, error) 
 	v.trends = factTrends(d, earlierRuns(d))
 	v.search = newOutputSearch(v.shownOutput)
 	v.tabs.OnSelected = func(*container.TabItem) { v.search.apply() }
-	center := container.NewBorder(container.NewVBox(v.stepTitle, v.stepMeta, v.search.bar, widget.NewSeparator()), nil, nil, nil, v.tabs)
+	var center fyne.CanvasObject = container.NewBorder(container.NewVBox(v.stepTitle, v.stepMeta, v.search.bar, widget.NewSeparator()), nil, nil, nil, v.tabs)
 
 	// What judges, targets and readers said, on the right.
 	v.verdicts = verdictParts(d)
+	// A cell judged as part of its matrix run has its verdict in the run.
+	if extra := cellVerdictLines(d.Dir); len(d.Verdicts) == 0 && len(extra) > 0 {
+		v.verdicts = extra
+	}
 	v.targets = targetParts(d)
 	v.notes = noteParts(d)
 	right := container.NewVScroll(container.NewPadded(container.NewVBox(
-		section("Verdicts", verdictCards(d)),
+		section("Verdicts", v.verdictsShown(d)),
 		section("Target", lines(v.targets)),
 		section("Read notes", lines(v.notes)),
 	)))
@@ -161,6 +176,13 @@ func newDetailViewFrom(dir, backLabel string, back func()) (*detailView, error) 
 	switch {
 	case len(d.CellList) > 0 && len(d.StepList) == 0:
 		v.stepTitle.SetText(fmt.Sprintf("This matrix run measured in %s. Pick one to open its record.", plural(len(d.CellList), "cell")))
+		// The cells as a grid, by the axes the run recorded.
+		v.heat = newHeatmapView(d, matrix, func(dir string) {
+			if v.onOpenCell != nil {
+				v.onOpenCell(dir)
+			}
+		})
+		center = container.NewBorder(container.NewVBox(v.stepTitle, widget.NewSeparator()), nil, nil, nil, v.heat.content)
 	case len(d.StepList) == 0:
 		v.stepTitle.SetText("This record has no steps.")
 	default:
@@ -171,6 +193,11 @@ func newDetailViewFrom(dir, backLabel string, back func()) (*detailView, error) 
 	inner.Offset = 0.7
 	outer := container.NewHSplit(left, inner)
 	outer.Offset = 0.3
+	if v.heat != nil {
+		// The grid is the matrix run's answer; the list beside it only
+		// names the cells.
+		outer.Offset = 0.2
+	}
 	v.content = container.NewBorder(header, nil, nil, nil, outer)
 	return v, nil
 }
@@ -464,6 +491,15 @@ func verdictProvenance(v browse.Verdict) string {
 		return "Judged " + when + " against these events."
 	}
 	return "Judged " + when + " over earlier events; the record's events have changed since, so this is not its verdict."
+}
+
+// verdictsShown is the Verdicts section: the record's own, or, for a cell
+// with none, what its matrix run's judge said of it.
+func (v *detailView) verdictsShown(d browse.Detail) fyne.CanvasObject {
+	if len(d.Verdicts) == 0 {
+		return lines(v.verdicts)
+	}
+	return verdictCards(d)
 }
 
 func verdictCards(d browse.Detail) fyne.CanvasObject {

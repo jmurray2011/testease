@@ -132,7 +132,9 @@ docker, EC2 and ECS. It does all of it by calling `testease`, so a record made
 from the app is the same as one made from a shell. It also puts two or more
 runs side by side - setup, scenario files, params, environment, targets, steps
 and facts - and says first what went in differently and what came out
-differently, read from the records alone. It is a separate Go
+differently, read from the records alone. A matrix run opens on a grid of its
+cells by axis, coloured by verdict, and a campaign shows a board of what it has
+done and has still to do while it runs. It is a separate Go
 module under `cmd/testease-desktop` because it needs cgo, a C compiler and the
 GL headers (on Debian or Ubuntu, `libgl1-mesa-dev xorg-dev libwayland-dev
 libxkbcommon-dev`; on Windows, MinGW-w64 gcc). `make desktop-validate` is its

@@ -149,6 +149,8 @@ type campaignView struct {
 	content  fyne.CanvasObject
 	// pack writes an archive of the campaign's records.
 	pack *action
+	// board shows what the campaign did and has still to do, as tiles.
+	board *boardView
 }
 
 func newCampaignView(runsDir, id string, back func(), openRun func(string)) *campaignView {
@@ -158,6 +160,7 @@ func newCampaignView(runsDir, id string, back func(), openRun func(string)) *cam
 	v.status = newPill(v.c.Status, groupStatusKind(v.c.Status))
 	top := backHeader("Campaigns", back, id, container.NewCenter(v.status), v.pack.Button, openFolderButton(v.c.Dir))
 	v.meta = note("")
+	v.board = newBoardView(runsDir, openRun)
 
 	v.table = listing(func() int { return len(v.c.Activities) }, activityTitles, activityWidths, acolRun, v.cell, nil)
 	// Unlike a listing, the picked activity stays highlighted: its log is
@@ -180,7 +183,7 @@ func newCampaignView(runsDir, id string, back func(), openRun func(string)) *cam
 	split := container.NewVSplit(v.table, logPane)
 	split.Offset = 0.5
 	v.content = container.NewBorder(
-		container.NewVBox(container.NewPadded(container.NewVBox(top, v.meta)), widget.NewSeparator(), v.problem),
+		container.NewVBox(container.NewPadded(container.NewVBox(top, v.meta, v.board.content)), widget.NewSeparator(), v.problem),
 		nil, nil, nil, split,
 	)
 	v.refreshHeader()
@@ -216,6 +219,7 @@ func (v *campaignView) refreshHeader() {
 		parts = append(parts, fmt.Sprintf("exit %d", v.c.ExitCode))
 	}
 	v.meta.SetText(strings.Join(parts, "    "))
+	v.board.set(v.c)
 	if v.c.Problem != "" {
 		showMessage(v.problem, v.c.Problem)
 	} else {

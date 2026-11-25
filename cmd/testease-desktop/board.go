@@ -2,10 +2,12 @@ package main
 
 import (
 	"fmt"
+	"image/color"
 	"path/filepath"
 	"strings"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
 
@@ -69,6 +71,10 @@ func campaignBoard(c browse.Campaign, runOf func(id string) (browse.Run, bool)) 
 		case isRun && a.RunID != "":
 			if r, ok := runOf(a.RunID); ok {
 				it.State, it.Word = runState(outcomeOf(r))
+				if it.State == boardFailed {
+					// The judge's own word, as Home says it.
+					it.Word = attentionWord(r)
+				}
 				break
 			}
 			fallthrough
@@ -118,6 +124,9 @@ func boardSummary(c browse.Campaign, items []boardItem) string {
 		case boardRunning:
 			going = it.Label
 		case boardWaiting:
+		case boardFailed:
+			done++
+			counts["failed"]++
 		default:
 			done++
 			counts[it.Word]++
@@ -162,7 +171,10 @@ type boardView struct {
 
 func newBoardView(runsDir string, onOpen func(string)) *boardView {
 	v := &boardView{runsDir: runsDir, onOpen: onOpen, summary: widget.NewLabel(""), row: container.NewHBox()}
-	v.content = container.NewVBox(v.summary, container.NewHScroll(v.row))
+	// Room under the tiles for the scroll bar, so it does not sit on them.
+	under := canvas.NewRectangle(color.Transparent)
+	under.SetMinSize(fyne.NewSize(1, 10))
+	v.content = container.NewVBox(v.summary, container.NewHScroll(container.NewVBox(v.row, under)))
 	return v
 }
 

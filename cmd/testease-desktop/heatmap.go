@@ -1,7 +1,9 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -9,9 +11,11 @@ import (
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/container"
+	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
 	"github.com/jmurray2011/testease/internal/browse"
+	"github.com/jmurray2011/testease/internal/judge"
 	"github.com/jmurray2011/testease/internal/record"
 )
 
@@ -21,6 +25,9 @@ type matrixCell struct {
 	Key, Dir, Status string
 	Outcome          outcome
 	Present          bool
+	// Word is what the judge said of the cell, when one did, and By names
+	// the judge: a cell's own verdict, or its matrix run's verdict of it.
+	Word, By string
 }
 
 // heatmap is a matrix run laid out by its axes: the first axis by name down
@@ -137,13 +144,19 @@ func tally(cells []matrixCell) string {
 }
 
 // matrixCells reads each cell of a matrix run: its own record says what it
-// came to, verdicts included. A cell with no record yet has only its status.
-func matrixCells(d browse.Detail) []matrixCell {
+// came to, verdicts included. A cell a matrix judge read from the parent has
+// its verdict in the parent's verdict, which counts where the cell has none
+// of its own. A cell with no record yet has only its status.
+func matrixCells(d browse.Detail, running bool) []matrixCell {
+	judged := censusVerdicts(d.Dir)
 	out := make([]matrixCell, 0, len(d.CellList))
 	for _, c := range d.CellList {
 		mc := matrixCell{Key: c.Key, Dir: c.Dir, Status: c.Status, Present: true}
 		if cd, err := browse.Open(c.Dir); err == nil {
 			mc.Outcome = outcomeOf(cd.Run)
+			if mc.Outcome == outcomeFailed {
+				mc.Word = attentionWord(cd.Run)
+			}
 		} else {
 			status := c.Status
 			if status == "" {
@@ -151,9 +164,107 @@ func matrixCells(d browse.Detail) []matrixCell {
 			}
 			mc.Outcome = outcomeOf(browse.Run{Status: status})
 		}
+		if cj, ok := judged[c.Key]; ok && mc.Outcome == outcomeUnjudged {
+			mc.Outcome, mc.Word, mc.By = outcomeFailed, cj.Verdict, cj.Judge
+			if cj.Passed {
+				mc.Outcome = outcomePassed
+			}
+		}
+		mc.Word = cellWord(mc, running)
 		out = append(out, mc)
 	}
 	return out
+}
+
+// cellWord is what a cell's tile says: the judge's own word for a failure,
+// and "running" only while the matrix run is still being written.
+func cellWord(c matrixCell, running bool) string {
+	switch c.Outcome {
+	case outcomeFailed:
+		if c.Word != "" {
+			return c.Word
+		}
+		return "failed"
+	case outcomeBroken:
+		return "broke"
+	case outcomeIncomplete:
+		if running && c.Status == "" {
+			return "running"
+		}
+		return "unfinished"
+	default:
+		return c.Outcome.String()
+	}
+}
+
+// cellJudgment is a matrix judge's verdict of one cell, as the parent
+// record keeps it.
+type cellJudgment struct {
+	Judge, Verdict string
+	Passed         bool
+	Because        []string
+}
+
+// censusVerdicts reads the per-cell verdicts a shipped judge wrote into a
+// matrix run's own record. A verdict counts only over the events on disk
+// now: the parent's, and the cell's where the verdict pinned them. Where two
+// judges speak of one cell, one that did not pass is the one kept.
+func censusVerdicts(dir string) map[string]cellJudgment {
+	body, err := os.ReadFile(filepath.Join(dir, record.EventsFile))
+	if err != nil {
+		return nil
+	}
+	events := record.HashBytes(body)
+	entries, err := os.ReadDir(filepath.Join(dir, judge.VerdictsDir))
+	if err != nil {
+		return nil
+	}
+	out := map[string]cellJudgment{}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(dir, judge.VerdictsDir, e.Name()))
+		if err != nil {
+			continue
+		}
+		var v judge.Verdict
+		if json.Unmarshal(raw, &v) != nil || v.Judge == "" || v.Evidence.Events != events {
+			continue
+		}
+		if _, err := judge.ByName(v.Judge); err != nil {
+			continue
+		}
+		for key, sv := range v.Cells {
+			if pinned := v.Evidence.Cells[key]; pinned != "" && filepath.IsLocal(key) {
+				cell, err := os.ReadFile(filepath.Join(dir, record.CellsDir, key, record.EventsFile))
+				if err != nil || record.HashBytes(cell) != pinned {
+					continue
+				}
+			}
+			cj := cellJudgment{Judge: v.Judge + "@" + v.Version, Verdict: sv.Verdict, Passed: judge.Passed(sv.Verdict), Because: sv.Because}
+			if was, ok := out[key]; ok && !was.Passed {
+				continue
+			}
+			out[key] = cj
+		}
+	}
+	return out
+}
+
+// cellVerdictLines says what a matrix run's judge said of a cell, for the
+// cell's own record, when the cell sits under a matrix run.
+func cellVerdictLines(dir string) []string {
+	parent := filepath.Dir(filepath.Dir(dir))
+	if filepath.Base(filepath.Dir(dir)) != record.CellsDir {
+		return nil
+	}
+	cj, ok := censusVerdicts(parent)[filepath.Base(dir)]
+	if !ok {
+		return nil
+	}
+	lines := []string{cj.Judge + " " + cj.Verdict + ", judged as a cell of " + filepath.Base(parent)}
+	return append(lines, cj.Because...)
 }
 
 // Sizes of the grid.
@@ -161,6 +272,8 @@ const (
 	heatTileW  = 116
 	heatTileH  = 38
 	heatLabelW = 110
+	// heatLabelMax is as wide as the side labels get before they are cut.
+	heatLabelMax = 240
 )
 
 // heatmapView draws a matrix run's grid. A tapped cell opens its record.
@@ -173,7 +286,7 @@ type heatmapView struct {
 }
 
 func newHeatmapView(d browse.Detail, m *record.Matrix, onOpen func(string)) *heatmapView {
-	cells := matrixCells(d)
+	cells := matrixCells(d, statusOf(d.Run) == statusRunning)
 	v := &heatmapView{h: buildHeatmap(m, cells), dir: d.Dir, onOpen: onOpen}
 	v.summary = widget.NewLabel(tally(cells))
 
@@ -184,9 +297,18 @@ func newHeatmapView(d browse.Detail, m *record.Matrix, onOpen func(string)) *hea
 			axisNote += ", " + strings.Join(v.h.ColAxes, " · ") + " across"
 		}
 	}
+	labelW := float32(heatLabelW)
+	pad := 2*theme.InnerPadding() + theme.Padding()
+	for _, t := range append([]string{v.h.RowAxis}, v.h.Rows...) {
+		if t == "" {
+			continue
+		}
+		labelW = max(labelW, fyne.MeasureText(t, theme.TextSize(), fyne.TextStyle{Monospace: true}).Width+pad)
+	}
+	labelW = min(labelW, heatLabelMax)
 	corner := widget.NewLabelWithStyle(v.h.RowAxis, fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 	corner.Truncation = fyne.TextTruncateEllipsis
-	header := []fyne.CanvasObject{sized(heatLabelW, heatTileH, corner)}
+	header := []fyne.CanvasObject{sized(labelW, heatTileH, corner)}
 	for _, c := range v.h.Cols {
 		l := widget.NewLabelWithStyle(c, fyne.TextAlignCenter, fyne.TextStyle{Monospace: true})
 		l.Truncation = fyne.TextTruncateEllipsis
@@ -196,7 +318,7 @@ func newHeatmapView(d browse.Detail, m *record.Matrix, onOpen func(string)) *hea
 	for i, r := range v.h.Rows {
 		l := widget.NewLabelWithStyle(r, fyne.TextAlignLeading, fyne.TextStyle{Monospace: true})
 		l.Truncation = fyne.TextTruncateEllipsis
-		row := []fyne.CanvasObject{sized(heatLabelW, heatTileH, l)}
+		row := []fyne.CanvasObject{sized(labelW, heatTileH, l)}
 		for _, c := range v.h.Cells[i] {
 			row = append(row, sized(heatTileW, heatTileH, v.cellTile(c)))
 		}
@@ -222,17 +344,7 @@ func (v *heatmapView) cellTile(c matrixCell) fyne.CanvasObject {
 	if !c.Present {
 		return newOutcomeTile("", "—", lookEmpty, nil)
 	}
-	word := c.Outcome.String()
-	switch c.Outcome {
-	case outcomeBroken:
-		word = "broke"
-	case outcomeIncomplete:
-		word = "unfinished"
-		if c.Status == "" {
-			word = "running"
-		}
-	}
-	return newOutcomeTile("", word, lookOf(c.Outcome), func() { v.open(c) })
+	return newOutcomeTile("", c.Word, lookOf(c.Outcome), func() { v.open(c) })
 }
 
 // open opens a cell's record. A cell's folder is under its parent's; one

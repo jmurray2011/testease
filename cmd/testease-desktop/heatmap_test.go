@@ -1,13 +1,17 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"fyne.io/fyne/v2/test"
 
+	"github.com/jmurray2011/testease/internal/browse"
+	"github.com/jmurray2011/testease/internal/judge"
 	"github.com/jmurray2011/testease/internal/record"
 )
 
@@ -140,5 +144,110 @@ func TestAMatrixRecordShowsItsGridAndATappedCellOpens(t *testing.T) {
 	v.heat.open(fail)
 	if want := filepath.Join(dir, record.CellsDir, "1.0.10+7.3.0"); opened != want {
 		t.Errorf("opened %q, want %q", opened, want)
+	}
+}
+
+// matrixJudgedInParent is a matrix run whose cells have no verdicts of their
+// own: the matrix judge writes each cell's verdict into the parent record.
+func matrixJudgedInParent(t *testing.T, runs string, staleCell bool) string {
+	t.Helper()
+	id := "docs-vtapi-compat-20261106T041701Z"
+	keys := []string{"1.0.10+7.2.6", "1.0.10+7.4.3"}
+	dir := recorded(t, runs, id, func(w *record.Writer) {
+		emit(t, w, record.KindRunStarted, 0, record.RunStarted{
+			RunID: id, Scenario: record.ScenarioRef{Name: "docs-vtapi-compat"},
+			Matrix: &record.Matrix{Axes: map[string][]string{"version": {"7.2.6", "7.4.3"}, "docs": {"1.0.10"}}},
+		})
+		for _, k := range keys {
+			emit(t, w, record.KindCellStarted, 0, record.CellStarted{Key: k})
+			emit(t, w, record.KindCellFinished, 0, record.CellFinished{Key: k, Status: record.StatusMeasured})
+		}
+		emit(t, w, record.KindRunFinished, 0, record.RunFinished{Status: record.StatusMeasured})
+	})
+	cellHashes := map[string]string{}
+	for _, k := range keys {
+		c := recorded(t, filepath.Join(dir, record.CellsDir), k, func(w *record.Writer) {
+			emit(t, w, record.KindRunStarted, 0, record.RunStarted{RunID: k, Scenario: record.ScenarioRef{Name: "docs-vtapi-compat"}})
+			emit(t, w, record.KindRunFinished, 0, record.RunFinished{Status: record.StatusMeasured})
+		})
+		body, err := os.ReadFile(filepath.Join(c, record.EventsFile))
+		if err != nil {
+			t.Fatal(err)
+		}
+		cellHashes[k] = record.HashBytes(body)
+	}
+	if staleCell {
+		cellHashes[keys[1]] = "sha256:other"
+	}
+	body, err := os.ReadFile(filepath.Join(dir, record.EventsFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := judge.Save(dir, judge.Verdict{
+		Schema: judge.Schema, Judge: "matrix", Version: "3", Verdict: "regressed",
+		JudgedAt: time.Date(2026, 11, 6, 5, 0, 0, 0, time.UTC),
+		Evidence: judge.Evidence{Events: record.HashBytes(body), Cells: cellHashes},
+		Cells: map[string]judge.StepVerdict{
+			keys[0]: {Verdict: "pass"},
+			keys[1]: {Verdict: "regressed", Because: []string{"check health: http.status 503, expected 200"}},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+func TestACellJudgedInItsMatrixRunShowsThatVerdict(t *testing.T) {
+	test.NewTempApp(t)
+	dir := matrixJudgedInParent(t, t.TempDir(), false)
+	d, err := browse.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cells := matrixCells(d, false)
+	h := buildHeatmap(&record.Matrix{Axes: map[string][]string{"version": {"7.2.6", "7.4.3"}, "docs": {"1.0.10"}}}, cells)
+	pass, bad := cellAt(h, "1.0.10", "7.2.6"), cellAt(h, "1.0.10", "7.4.3")
+	if pass.Outcome != outcomePassed || bad.Outcome != outcomeFailed {
+		t.Errorf("outcomes %v %v", pass.Outcome, bad.Outcome)
+	}
+	if bad.Word != "regressed" || bad.By != "matrix@3" {
+		t.Errorf("failed cell says %q by %q", bad.Word, bad.By)
+	}
+}
+
+func TestACellVerdictOverOtherCellEventsIsNotShown(t *testing.T) {
+	test.NewTempApp(t)
+	dir := matrixJudgedInParent(t, t.TempDir(), true)
+	d, err := browse.Open(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range matrixCells(d, false) {
+		if c.Key == "1.0.10+7.4.3" && c.Outcome != outcomeUnjudged {
+			t.Errorf("a verdict over other events counted: %+v", c)
+		}
+	}
+}
+
+func TestAnOpenedCellSaysWhatItsMatrixRunsJudgeSaid(t *testing.T) {
+	test.NewTempApp(t)
+	dir := matrixJudgedInParent(t, t.TempDir(), false)
+	v, err := newDetailView(filepath.Join(dir, record.CellsDir, "1.0.10+7.4.3"), func() {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := strings.Join(v.verdicts, "\n")
+	if !strings.Contains(got, "matrix@3") || !strings.Contains(got, "regressed") || !strings.Contains(got, "http.status 503") {
+		t.Errorf("verdicts %q", got)
+	}
+}
+
+func TestACellOfAStoppedMatrixRunIsNotCalledRunning(t *testing.T) {
+	m := matrixCell{Present: true, Outcome: outcomeIncomplete}
+	if got := cellWord(m, false); got != "unfinished" {
+		t.Errorf("word %q", got)
+	}
+	if got := cellWord(m, true); got != "running" {
+		t.Errorf("word while the run is written %q", got)
 	}
 }

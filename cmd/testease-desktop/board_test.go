@@ -38,6 +38,10 @@ func TestABoardShowsWhatACampaignDidAndWhatIsLeft(t *testing.T) {
 	if want := []boardState{boardDone, boardBad, boardPassed, boardFailed, boardRunning, boardWaiting}; !slices.Equal(states, want) {
 		t.Errorf("states %v, want %v", states, want)
 	}
+	// A failed run's tile says what its judge said.
+	if items[3].Word != "fail" {
+		t.Errorf("failed run says %q", items[3].Word)
+	}
 	if items[2].RunID != "s-1" || items[5].RunID != "" {
 		t.Errorf("run ids %q %q", items[2].RunID, items[5].RunID)
 	}

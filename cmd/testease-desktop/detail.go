@@ -161,10 +161,14 @@ func newDetailViewFrom(dir, backLabel string, back func()) (*detailView, error) 
 
 	// What judges, targets and readers said, on the right.
 	v.verdicts = verdictParts(d)
+	// A cell judged as part of its matrix run has its verdict in the run.
+	if extra := cellVerdictLines(d.Dir); len(d.Verdicts) == 0 && len(extra) > 0 {
+		v.verdicts = extra
+	}
 	v.targets = targetParts(d)
 	v.notes = noteParts(d)
 	right := container.NewVScroll(container.NewPadded(container.NewVBox(
-		section("Verdicts", verdictCards(d)),
+		section("Verdicts", v.verdictsShown(d)),
 		section("Target", lines(v.targets)),
 		section("Read notes", lines(v.notes)),
 	)))
@@ -487,6 +491,15 @@ func verdictProvenance(v browse.Verdict) string {
 		return "Judged " + when + " against these events."
 	}
 	return "Judged " + when + " over earlier events; the record's events have changed since, so this is not its verdict."
+}
+
+// verdictsShown is the Verdicts section: the record's own, or, for a cell
+// with none, what its matrix run's judge said of it.
+func (v *detailView) verdictsShown(d browse.Detail) fyne.CanvasObject {
+	if len(d.Verdicts) == 0 {
+		return lines(v.verdicts)
+	}
+	return verdictCards(d)
 }
 
 func verdictCards(d browse.Detail) fyne.CanvasObject {

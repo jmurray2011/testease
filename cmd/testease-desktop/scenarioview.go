@@ -60,7 +60,7 @@ func (a *axisPick) value() (string, bool) {
 func (a *axisPick) set(value string) {
 	values := splitList(value)
 	if len(values) == 0 {
-		a.checks.SetSelected(a.declared)
+		a.checks.SetSelected(slices.Clone(a.declared))
 		a.other.SetText("")
 		return
 	}
@@ -129,9 +129,11 @@ func newScenarioView(ctx scenarioContext, back func()) (*scenarioView, error) {
 		p := m.Params[k]
 		// An axis that lists its values is picked from them.
 		if declared := splitList(p.Values); p.Axis && !strings.HasPrefix(p.Values, "@") && len(declared) > 0 {
-			pick := &axisPick{declared: declared, checks: widget.NewCheckGroup(declared, nil), other: widget.NewEntry()}
+			// The boxes get lists of their own: a box changes its selected
+			// list in place, and the declared values must not change with it.
+			pick := &axisPick{declared: declared, checks: widget.NewCheckGroup(slices.Clone(declared), nil), other: widget.NewEntry()}
 			pick.checks.Horizontal = true
-			pick.checks.SetSelected(declared)
+			pick.checks.SetSelected(slices.Clone(declared))
 			pick.other.SetPlaceHolder("other values, comma-separated")
 			v.picks[k] = pick
 			form.Append(k+" (axis)", container.NewVBox(pick.checks, pick.other))
@@ -175,9 +177,15 @@ func newScenarioView(ctx scenarioContext, back func()) (*scenarioView, error) {
 	v.refreshPresets()
 	saveAs := widget.NewButtonWithIcon("Save as preset…", theme.DocumentSaveIcon(), v.askPresetName)
 	remove := widget.NewButtonWithIcon("", theme.DeleteIcon(), func() {
-		if v.preset.Selected != "" {
-			v.deletePreset(v.preset.Selected)
+		name := v.preset.Selected
+		if name == "" || v.ctx.window == nil {
+			return
 		}
+		dialog.ShowConfirm("Delete preset", "Delete the preset "+name+"?", func(ok bool) {
+			if ok {
+				v.deletePreset(name)
+			}
+		}, v.ctx.window)
 	})
 	presets := container.NewBorder(nil, nil, nil, container.NewHBox(saveAs, remove), v.preset)
 

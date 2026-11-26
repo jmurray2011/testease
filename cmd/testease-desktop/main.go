@@ -63,6 +63,9 @@ func main() {
 	})
 	w.SetCloseIntercept(s.quit)
 	w.SetContent(s.content)
+	// Shortcuts go on the canvas once it holds the content: added earlier,
+	// the window paints nothing on Windows.
+	s.addShortcuts()
 	w.Resize(openingSize)
 
 	go func() {
@@ -163,7 +166,6 @@ func newShell(w fyne.Window, dir, from string, remember func(string)) *shell {
 		navBackground.Refresh()
 	})
 
-	s.addShortcuts()
 	s.body = container.NewStack()
 	sidebar := container.NewHBox(navPanelSized(navPanel), widget.NewSeparator())
 	s.content = container.NewBorder(nil, nil, sidebar, nil, s.body)

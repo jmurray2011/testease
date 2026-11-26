@@ -168,3 +168,22 @@ func TestRunAgainOpensTheScenarioFilledIn(t *testing.T) {
 		t.Errorf("filled note %q", v.filled.Text)
 	}
 }
+
+// Unticking a value in the middle leaves the others as they were: the
+// boxes and the declared values do not share one list.
+func TestUntickingAMiddleValueKeepsTheOthers(t *testing.T) {
+	test.NewTempApp(t)
+	var asked []string
+	v := openSweep(t, sweepRoot(t), &asked)
+	pick := v.picks["version"]
+	// As the form opens, every value ticked; then, as a tap does: the box removes its value from what is selected.
+	pick.checks.Selected = append(pick.checks.Selected[:1], pick.checks.Selected[2:]...)
+	pick.other.SetText("7.5.0")
+	v.run()
+	if !slices.Contains(asked, "version=7.2.6,7.4.1,7.5.0") {
+		t.Errorf("asked %q", asked)
+	}
+	if !slices.Equal(pick.declared, []string{"7.2.6", "7.3.0", "7.4.1"}) {
+		t.Errorf("declared values changed under the boxes: %q", pick.declared)
+	}
+}

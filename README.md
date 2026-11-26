@@ -134,7 +134,10 @@ runs side by side - setup, scenario files, params, environment, targets, steps
 and facts - and says first what went in differently and what came out
 differently, read from the records alone. A matrix run opens on a grid of its
 cells by axis, coloured by verdict, and a campaign shows a board of what it has
-done and has still to do while it runs. It is a separate Go
+done and has still to do while it runs. A run is launched from a form built
+from the scenario's params, with an axis picked from its declared values, named
+presets, and "Run again" on any record; Ctrl+K finds any screen, scenario or
+run. It is a separate Go
 module under `cmd/testease-desktop` because it needs cgo, a C compiler and the
 GL headers (on Debian or Ubuntu, `libgl1-mesa-dev xorg-dev libwayland-dev
 libxkbcommon-dev`; on Windows, MinGW-w64 gcc). `make desktop-validate` is its

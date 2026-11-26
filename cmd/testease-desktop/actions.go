@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strings"
 	"time"
 
 	"fyne.io/fyne/v2"
@@ -65,16 +66,46 @@ func (s *shell) chooseScenarioRoot() {
 }
 
 func (s *shell) openScenario(name string) {
+	s.openScenarioFrom(name, "Scenarios", s.showScenarios)
+}
+
+func (s *shell) openScenarioFrom(name, from string, back func()) *scenarioView {
 	v, err := newScenarioView(scenarioContext{
-		runsDir: s.dir, root: s.tools.scenarioRoot, name: name,
+		runsDir: s.dir, root: s.tools.scenarioRoot, name: name, window: s.window, backLabel: from,
 		targets: catalogNames(s.tools.catalog), start: func(title string, args []string) { s.startJob(title, args) },
-	}, s.showScenarios)
+	}, back)
 	if err != nil {
 		dialog.ShowError(err, s.window)
-		return
+		return nil
 	}
 	s.highlight(sectionScenarios)
 	s.show(v, v.content)
+	return v
+}
+
+// runAgain opens a record's scenario with the form filled from the record,
+// for a person to check and run. Nothing starts until they press Run.
+func (s *shell) runAgain(d *detailView) {
+	name := d.d.Scenario
+	if name == "" || s.tools.scenarioRoot == "" {
+		dialog.ShowInformation("Run again", "Choose the scenario root on the Scenarios screen first: the record names the scenario, and the scenario's files are needed to run it.", s.window)
+		return
+	}
+	if _, err := os.Stat(scenarioDir(s.tools.scenarioRoot, name)); err != nil || !filepath.IsLocal(name) {
+		dialog.ShowInformation("Run again", fmt.Sprintf("There is no scenario %q under %s.", name, s.tools.scenarioRoot), s.window)
+		return
+	}
+	v := s.openScenarioFrom(name, "Run", func() { s.show(d, d.content) })
+	if v == nil {
+		return
+	}
+	r, dropped := againRequest(d.d, d.matrix)
+	v.fill(r)
+	text := "Filled from " + d.d.RunID + ". Check it, then Run."
+	if len(dropped) > 0 {
+		text += " Secrets are not copied from a record; type " + strings.Join(dropped, ", ") + " again."
+	}
+	v.say(v.filled, text)
 }
 
 // catalogNames is the targets a catalog names, for picking one. A catalog

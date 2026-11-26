@@ -58,12 +58,16 @@ type detailView struct {
 	// are in the cells' own records, not the parent's.
 	cells      *widget.List
 	onOpenCell func(dir string)
-	// heat is a matrix run's cells as a grid.
-	heat *heatmapView
+	// heat is a matrix run's cells as a grid, and matrix the scope the run
+	// recorded.
+	heat   *heatmapView
+	matrix *record.Matrix
 
 	// judge reads the record again with its judge; render shows it in one
 	// of its views; compare asks which stable facts differ from other runs.
 	judge, render, compare *action
+	// again opens the record's scenario with the form filled from it.
+	again *action
 }
 
 func newDetailView(dir string, back func()) (*detailView, error) {
@@ -78,11 +82,12 @@ func newDetailViewFrom(dir, backLabel string, back func()) (*detailView, error) 
 	v := &detailView{
 		d: d, selected: -1, backLabel: backLabel, back: back, judge: newAction("Judge", theme.ConfirmIcon()),
 		render: newAction("Render…", theme.DocumentIcon()), compare: newAction("Compare…", theme.ListIcon()),
+		again: newAction("Run again…", theme.MediaReplayIcon()),
 	}
 
 	// Header: where this is, what it measured, and how to get at the files.
 	status := newPill(statusOf(d.Run), statusKind(statusOf(d.Run)))
-	top := backHeader(backLabel, back, d.RunID, container.NewCenter(status), v.judge.Button, v.render.Button, v.compare.Button, openFolderButton(d.Dir))
+	top := backHeader(backLabel, back, d.RunID, container.NewCenter(status), v.again.Button, v.judge.Button, v.render.Button, v.compare.Button, openFolderButton(d.Dir))
 
 	v.meta = metaParts(d)
 	metaLabel := widget.NewLabel(strings.Join(v.meta, "    "))
@@ -144,7 +149,7 @@ func newDetailViewFrom(dir, backLabel string, back func()) (*detailView, error) 
 		for _, e := range rec.Latest().Events {
 			if e.Kind == record.KindRunStarted {
 				if started, err := record.Decode[record.RunStarted](e); err == nil {
-					matrix = started.Matrix
+					matrix, v.matrix = started.Matrix, started.Matrix
 				}
 				break
 			}

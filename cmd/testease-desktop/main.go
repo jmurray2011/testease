@@ -63,6 +63,9 @@ func main() {
 	})
 	w.SetCloseIntercept(s.quit)
 	w.SetContent(s.content)
+	// Shortcuts go on the canvas once it holds the content: added earlier,
+	// the window paints nothing on Windows.
+	s.addShortcuts()
 	w.Resize(openingSize)
 
 	go func() {
@@ -136,7 +139,7 @@ func newShell(w fyne.Window, dir, from string, remember func(string)) *shell {
 	logo.FillMode = canvas.ImageFillContain
 	logo.SetMinSize(fyne.NewSize(22, 22))
 	nav := container.NewVBox(container.NewHBox(container.NewPadded(logo), name))
-	shows := [sections]func(){s.showHome, s.showRuns, s.showBatches, s.showCampaigns, s.showScenarios, s.showActivity, s.showTargets, s.showSettings}
+	shows := s.sectionShows()
 	icons := sectionIcons()
 	for i := range sections {
 		b := widget.NewButtonWithIcon(sectionNames[i], icons[i], shows[i])
@@ -294,6 +297,7 @@ func (s *shell) openRecord(dir, from string, back func()) {
 	v.judge.set(func() { s.startRecordJob(dir, "judge "+filepath.Base(dir), judgeArgs(s.dir, dir)) })
 	v.render.set(func() { s.chooseRender(dir) })
 	v.compare.set(func() { s.chooseCompare(dir, func() { s.show(v, v.content) }) })
+	v.again.set(func() { s.runAgain(v) })
 	s.show(v, v.content)
 }
 

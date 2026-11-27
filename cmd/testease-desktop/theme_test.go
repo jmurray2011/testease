@@ -66,6 +66,8 @@ func TestEveryTextPairingReadsInBothVariants(t *testing.T) {
 		{colorPillBadText, colorPillBad},
 		{colorPillActiveText, colorPillActive},
 		{theme.ColorNameForeground, colorSelected},
+		{theme.ColorNameForeground, theme.ColorNameButton},
+		{theme.ColorNameDisabled, theme.ColorNameDisabledButton},
 	}
 	th := appTheme{}
 	for _, variant := range []fyne.ThemeVariant{theme.VariantLight, theme.VariantDark} {
@@ -74,6 +76,27 @@ func TestEveryTextPairingReadsInBothVariants(t *testing.T) {
 			if got < 4.5 {
 				t.Errorf("variant %d: %s on %s has contrast %.2f, want at least 4.5", variant, p.text, p.on, got)
 			}
+		}
+	}
+}
+
+// A button has to look like one: a fill a step off the screen and off the
+// sidebar, so an enabled button does not read as disabled, and a disabled one
+// nearer the background than an enabled one.
+func TestButtonsStandOutFromWhatTheySitOn(t *testing.T) {
+	t.Parallel()
+
+	th := appTheme{}
+	for _, variant := range []fyne.ThemeVariant{theme.VariantLight, theme.VariantDark} {
+		button := th.Color(theme.ColorNameButton, variant)
+		for _, on := range []fyne.ThemeColorName{theme.ColorNameBackground, colorNav} {
+			if got := contrast(button, th.Color(on, variant)); got < 1.15 {
+				t.Errorf("variant %d: a button on %s has contrast %.2f, want at least 1.15", variant, on, got)
+			}
+		}
+		bg := th.Color(theme.ColorNameBackground, variant)
+		if contrast(th.Color(theme.ColorNameDisabledButton, variant), bg) >= contrast(button, bg) {
+			t.Errorf("variant %d: a disabled button stands out as much as an enabled one", variant)
 		}
 	}
 }

@@ -14,6 +14,7 @@ import (
 
 	"github.com/jmurray2011/testease/internal/browse"
 	"github.com/jmurray2011/testease/internal/campaign"
+	"github.com/jmurray2011/testease/internal/judge"
 )
 
 // The Campaigns screen's columns.
@@ -44,7 +45,7 @@ type campaignsView struct {
 }
 
 func newCampaignsView(dir string, onOpen func(browse.Campaign)) *campaignsView {
-	v := &campaignsView{dir: dir, onOpen: onOpen, count: widget.NewLabel(""), message: message(), run: newAction("Run campaign…", theme.MediaPlayIcon())}
+	v := &campaignsView{dir: dir, onOpen: onOpen, count: widget.NewLabel(""), message: message(), run: primaryAction("Run campaign…", theme.MediaPlayIcon())}
 	v.table = listing(func() int { return len(v.all) }, campaignTitles, campaignWidths, ccolCampaign, v.cell,
 		func(row int) { v.onOpen(v.all[row]) })
 	refresh := widget.NewButtonWithIcon("Refresh", theme.ViewRefreshIcon(), v.reload)
@@ -186,6 +187,11 @@ func newCampaignView(runsDir, id string, back func(), openRun func(string)) *cam
 		container.NewVBox(container.NewPadded(container.NewVBox(top, v.meta, v.board.content)), widget.NewSeparator(), v.problem),
 		nil, nil, nil, split,
 	)
+	v.board.onReflow = func() {
+		if c, ok := v.content.(*fyne.Container); ok {
+			c.Refresh()
+		}
+	}
 	v.refreshHeader()
 	v.showCampaignLog()
 	return v
@@ -349,9 +355,36 @@ func (v *campaignView) cell(row, col int) (string, pillKind, bool) {
 	case acolRun:
 		return orDash(a.RunID), pillNeutral, false
 	case acolVerdict:
-		return a.Verdict, pillNeutral, false
+		return v.verdictOf(row)
 	}
 	return "", pillNeutral, false
+}
+
+// verdictOf is what an activity's run came to: the verdict the campaign
+// recorded for it, or else what the run's own record says, as its tile on the
+// board does. An activity that started no run, or whose run has no record
+// yet, has none.
+func (v *campaignView) verdictOf(row int) (string, pillKind, bool) {
+	a := v.c.Activities[row]
+	if a.Verdict != "" {
+		if judge.Passed(a.Verdict) {
+			return a.Verdict, pillGood, true
+		}
+		return a.Verdict, pillBad, true
+	}
+	if row < len(v.board.items) {
+		switch it := v.board.items[row]; it.State {
+		case boardPassed:
+			return it.Word, pillGood, true
+		case boardFailed, boardBroken:
+			return it.Word, pillBad, true
+		case boardDone:
+			if it.RunID != "" && (it.Word == "not judged" || it.Word == "unfinished") {
+				return it.Word, pillNeutral, true
+			}
+		}
+	}
+	return "—", pillNeutral, false
 }
 
 func (v *campaignView) cellText(row, col int) string {

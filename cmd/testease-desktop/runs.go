@@ -98,6 +98,7 @@ func newRunsView(dir string, onOpen func(dir string)) *runsView {
 				label.Hide()
 				box.Show()
 				p.Set(text, kind)
+				box.Refresh()
 				return
 			}
 			box.Hide()
@@ -148,7 +149,7 @@ func newRunsView(dir string, onOpen func(dir string)) *runsView {
 	v.since.SetSelected(firstSet(prefs.String(prefRunsSince), anyTime))
 	v.choosing = false
 	v.clearAll = widget.NewButtonWithIcon("Clear", theme.ContentClearIcon(), v.clear)
-	v.compare = newAction("Compare…", theme.ListIcon())
+	v.compare = primaryAction("Compare…", theme.ListIcon())
 
 	v.filter.SetPlaceHolder("Search runs")
 	height := v.filter.MinSize().Height

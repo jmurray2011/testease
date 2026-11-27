@@ -410,6 +410,7 @@ func (s *shell) compareRecords(dirs []string, from string, back func()) {
 		return
 	}
 	v.window = s.window
+	s.highlightFrom(from)
 	if v.oneScenario() {
 		v.reproduce.set(func() {
 			d := v.dirs()

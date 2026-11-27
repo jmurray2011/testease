@@ -82,7 +82,7 @@ func newDetailViewFrom(dir, backLabel string, back func()) (*detailView, error) 
 		return nil, err
 	}
 	v := &detailView{
-		d: d, selected: -1, backLabel: backLabel, back: back, judge: newAction("Judge", theme.ConfirmIcon()),
+		d: d, selected: -1, backLabel: backLabel, back: back, judge: primaryAction("Judge", theme.ConfirmIcon()),
 		render: newAction("Render…", theme.DocumentIcon()), compare: newAction("Compare…", theme.ListIcon()),
 		again: newAction("Run again…", theme.MediaReplayIcon()), watch: newAction("Watch live", theme.VisibilityIcon()),
 	}
@@ -114,6 +114,9 @@ func newDetailViewFrom(dir, backLabel string, back func()) (*detailView, error) 
 			row.Objects[1].(*fyne.Container).Objects[0].(*widget.Label).SetText(fmt.Sprint(s.Seq))
 			p := row.Objects[2].(*fyne.Container).Objects[0].(*pill)
 			p.Set(stepStatus(s), statusKind(s.Status))
+			// The row was laid out for the template's empty pill; lay it
+			// out again for this one's word, or the word is cut off.
+			row.Refresh()
 		},
 	)
 	v.steps.OnSelected = v.selectStep
@@ -166,20 +169,6 @@ func newDetailViewFrom(dir, backLabel string, back func()) (*detailView, error) 
 	v.tabs.OnSelected = func(*container.TabItem) { v.search.apply() }
 	var center fyne.CanvasObject = container.NewBorder(container.NewVBox(v.stepTitle, v.stepMeta, v.search.bar, widget.NewSeparator()), nil, nil, nil, v.tabs)
 
-	// What judges, targets and readers said, on the right.
-	v.verdicts = verdictParts(d)
-	// A cell judged as part of its matrix run has its verdict in the run.
-	if extra := cellVerdictLines(d.Dir); len(d.Verdicts) == 0 && len(extra) > 0 {
-		v.verdicts = extra
-	}
-	v.targets = targetParts(d)
-	v.notes = noteParts(d)
-	right := container.NewVScroll(container.NewPadded(container.NewVBox(
-		section("Verdicts", v.verdictsShown(d)),
-		section("Target", lines(v.targets)),
-		section("Read notes", lines(v.notes)),
-	)))
-
 	switch {
 	case len(d.CellList) > 0 && len(d.StepList) == 0:
 		v.stepTitle.SetText(fmt.Sprintf("This matrix run measured in %s. Pick one to open its record.", plural(len(d.CellList), "cell")))
@@ -195,6 +184,27 @@ func newDetailViewFrom(dir, backLabel string, back func()) (*detailView, error) 
 	default:
 		v.steps.Select(firstOfInterest(d.StepList))
 	}
+
+	// What judges, targets and readers said, on the right.
+	v.verdicts = verdictParts(d)
+	// A cell judged as part of its matrix run has its verdict in the run.
+	if extra := cellVerdictLines(d.Dir); len(d.Verdicts) == 0 && len(extra) > 0 {
+		v.verdicts = extra
+	}
+	// A matrix run with no verdict of its own still has its cells': say what
+	// they came to, rather than "not judged" beside a grid of verdicts.
+	if v.heat != nil && len(d.Verdicts) == 0 {
+		if extra := matrixVerdictLines(v.heat.cells); len(extra) > 0 {
+			v.verdicts = extra
+		}
+	}
+	v.targets = targetParts(d)
+	v.notes = noteParts(d)
+	right := container.NewVScroll(container.NewPadded(container.NewVBox(
+		section("Verdicts", v.verdictsShown(d)),
+		section("Target", lines(v.targets)),
+		section("Read notes", lines(v.notes)),
+	)))
 
 	inner := container.NewHSplit(center, right)
 	inner.Offset = 0.7
@@ -229,6 +239,8 @@ func (v *detailView) cellList(d browse.Detail) fyne.CanvasObject {
 				status = "no outcome"
 			}
 			row.Objects[1].(*fyne.Container).Objects[0].(*pill).Set(status, statusKind(c.Status))
+			// As for a step: lay the row out for this pill's word.
+			row.Refresh()
 		},
 	)
 	v.cells.OnSelected = func(i widget.ListItemID) {

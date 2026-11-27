@@ -131,7 +131,9 @@ func newHomeView(dir string, openRun, openScenario func(string)) *homeView {
 		func(i widget.ListItemID, o fyne.CanvasObject) {
 			r := v.summary.Attention[i]
 			c := o.(*fyne.Container)
-			c.Objects[0].(*fyne.Container).Objects[0].(*pill).Set(attentionWord(r), pillBad)
+			box := c.Objects[0].(*fyne.Container)
+			box.Objects[0].(*pill).Set(attentionWord(r), pillBad)
+			box.Refresh()
 			c.Objects[1].(*widget.Label).SetText(r.RunID)
 		},
 	)

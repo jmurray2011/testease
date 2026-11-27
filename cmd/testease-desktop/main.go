@@ -298,6 +298,12 @@ func (s *shell) openRecord(dir, from string, back func()) {
 	v.render.set(func() { s.chooseRender(dir) })
 	v.compare.set(func() { s.chooseCompare(dir, func() { s.show(v, v.content) }) })
 	v.again.set(func() { s.runAgain(v) })
+	if statusOf(v.d.Run) == statusRunning {
+		v.watch.set(func() {
+			l := newLiveScreen(dir, "Record", func() { s.show(v, v.content) })
+			s.show(l, l.content)
+		})
+	}
 	s.show(v, v.content)
 }
 
@@ -305,6 +311,10 @@ func (s *shell) openRecord(dir, from string, back func()) {
 // asks for, so a screen sits in a scroll: one that asks for more room than the
 // window has scrolls, and the window keeps the size the person gave it.
 func (s *shell) show(view any, screen fyne.CanvasObject) {
+	// A live screen left behind stops reading the record.
+	if l, ok := s.current.(*liveScreen); ok && l != view {
+		l.live.stop()
+	}
 	s.current = view
 	s.body.Objects = []fyne.CanvasObject{container.NewScroll(screen)}
 	s.body.Refresh()

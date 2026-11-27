@@ -39,7 +39,7 @@ func resolvePath(flag, flagName, env, envName, remembered string) (dir, from str
 
 // sidebarPath is a runs directory as the narrow sidebar shows it: the folder's
 // own name, whole, and on a second line the folder it is in, shortened to its
-// last element.
+// last element, and that cut in the middle when it is too long for the line.
 func sidebarPath(p string) (name, in string) {
 	clean := filepath.Clean(p)
 	name = filepath.Base(clean)
@@ -52,5 +52,21 @@ func sidebarPath(p string) (name, in string) {
 	if strings.Count(strings.Trim(trimmed, sep), sep) == 0 {
 		return name, "in " + parent
 	}
-	return name, "in …" + sep + filepath.Base(parent)
+	return name, "in …" + sep + elideMiddle(filepath.Base(parent), sidebarParentMax)
+}
+
+// sidebarParentMax is as many characters of the parent folder's name as fit
+// on the sidebar's line beside "in …/".
+const sidebarParentMax = 18
+
+// elideMiddle shortens s to at most n characters by cutting out its middle,
+// so both its start and its end - often a date or a number - stay readable.
+func elideMiddle(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n || n < 3 {
+		return s
+	}
+	keep := n - 1
+	head := (keep + 1) / 2
+	return string(r[:head]) + "…" + string(r[len(r)-(keep-head):])
 }

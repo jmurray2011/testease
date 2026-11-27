@@ -143,6 +143,29 @@ func tally(cells []matrixCell) string {
 	return plural(n, "cell") + ": " + strings.Join(parts, ", ")
 }
 
+// matrixVerdictLines is the Verdicts panel of a matrix run that has no
+// verdict of its own but whose cells were judged one by one. Nothing is said
+// when no cell has a verdict either: the run is then simply not judged.
+func matrixVerdictLines(cells []matrixCell) []string {
+	judgedCells := 0
+	for _, c := range cells {
+		if c.Present && (c.Outcome == outcomePassed || c.Outcome == outcomeFailed) {
+			judgedCells++
+		}
+	}
+	if judgedCells == 0 {
+		return nil
+	}
+	counts := tally(cells)
+	if _, after, ok := strings.Cut(counts, ": "); ok {
+		counts = after
+	}
+	return []string{
+		"No verdict on the run as a whole yet.",
+		"Its cells were judged one by one, as the grid shows: " + counts + ".",
+	}
+}
+
 // matrixCells reads each cell of a matrix run: its own record says what it
 // came to, verdicts included. A cell a matrix judge read from the parent has
 // its verdict in the parent's verdict, which counts where the cell has none
@@ -279,6 +302,7 @@ const (
 // heatmapView draws a matrix run's grid. A tapped cell opens its record.
 type heatmapView struct {
 	h       heatmap
+	cells   []matrixCell
 	dir     string
 	summary *widget.Label
 	onOpen  func(dir string)
@@ -287,7 +311,7 @@ type heatmapView struct {
 
 func newHeatmapView(d browse.Detail, m *record.Matrix, onOpen func(string)) *heatmapView {
 	cells := matrixCells(d, statusOf(d.Run) == statusRunning)
-	v := &heatmapView{h: buildHeatmap(m, cells), dir: d.Dir, onOpen: onOpen}
+	v := &heatmapView{h: buildHeatmap(m, cells), cells: cells, dir: d.Dir, onOpen: onOpen}
 	v.summary = widget.NewLabel(tally(cells))
 
 	axisNote := ""

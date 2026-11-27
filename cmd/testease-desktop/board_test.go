@@ -5,7 +5,9 @@ import (
 	"testing"
 	"time"
 
+	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/test"
+	"fyne.io/fyne/v2/theme"
 
 	"github.com/jmurray2011/testease/internal/browse"
 )
@@ -78,5 +80,29 @@ func TestTheCampaignScreenShowsItsBoardAndKeepsUp(t *testing.T) {
 	v.reload()
 	if got := v.board.items[len(v.board.items)-1]; got.Label != "hook cleanup" || got.State != boardDone {
 		t.Errorf("after it finished, last item %+v", got)
+	}
+}
+
+// A board wider than the screen wraps onto more rows rather than running off
+// its edge, where nothing says there is more.
+func TestABoardWrapsRatherThanRunningOffTheScreen(t *testing.T) {
+	test.NewTempApp(t)
+	l := &wrapTiles{tile: fyne.NewSize(boardTileW, boardTileH)}
+	var tiles []fyne.CanvasObject
+	for range 10 {
+		tiles = append(tiles, newOutcomeTile("run", "waiting", lookEmpty, nil))
+	}
+	width := float32(4*boardTileW + 3*theme.Padding())
+	l.Layout(tiles, fyne.NewSize(width, 500))
+	for _, o := range tiles {
+		if right := o.Position().X + o.Size().Width; right > width {
+			t.Errorf("a tile ends at %v, past the board's %v", right, width)
+		}
+	}
+	if l.rows != 3 {
+		t.Errorf("%d rows, want 10 tiles in rows of 4 to take 3", l.rows)
+	}
+	if h := l.MinSize(tiles).Height; h < 3*boardTileH {
+		t.Errorf("the board asks for %v high, too little for 3 rows", h)
 	}
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/jmurray2011/testease/internal/batch"
 	"github.com/jmurray2011/testease/internal/browse"
 	"github.com/jmurray2011/testease/internal/campaign"
+	"github.com/jmurray2011/testease/internal/record"
 )
 
 // Batches and campaigns are how runs are usually started: a set of tests run
@@ -270,10 +271,10 @@ func TestACampaignOpensOnWhatItDidAndItsLog(t *testing.T) {
 
 	v := newCampaignView(runs, upgradeID, func() {}, func(string) {})
 	rows := [][4]string{
-		{"hook prepare", "exit 0", "—", ""},
-		{"doctor", "exit 3", "—", ""},
+		{"hook prepare", "exit 0", "—", "—"},
+		{"doctor", "exit 3", "—", "—"},
 		{"run 1", "exit 0", "upgrade-scenario-20261124T010100Z", "pass"},
-		{"run 2", "running", "—", ""},
+		{"run 2", "running", "—", "—"},
 	}
 	for r, want := range rows {
 		for c, text := range want {
@@ -284,6 +285,31 @@ func TestACampaignOpensOnWhatItDidAndItsLog(t *testing.T) {
 	}
 	if got := v.log.Text(); got != "run 2 of 2 started\n" {
 		t.Errorf("log = %q, want the campaign's output.log", got)
+	}
+}
+
+// The campaign does not always write a run's verdict into its own record: the
+// run is judged in its own. The Verdict column then says what the run's
+// record says, as the run's tile on the board does, rather than nothing.
+func TestACampaignRunsVerdictIsReadFromItsRecordWhenTheCampaignHasNone(t *testing.T) {
+	test.NewTempApp(t)
+
+	runs := t.TempDir()
+	upgradeCampaign(t, runs, true)
+	id := "upgrade-scenario-20261124T011500Z"
+	dir := recorded(t, runs, id, func(w *record.Writer) {
+		emit(t, w, record.KindRunStarted, 0, record.RunStarted{RunID: id, Scenario: record.ScenarioRef{Name: "upgrade-scenario"}})
+		emit(t, w, record.KindRunFinished, 0, record.RunFinished{Status: record.StatusMeasured})
+	})
+	judged(t, dir, "fail", true)
+
+	v := newCampaignView(runs, upgradeID, func() {}, func(string) {})
+	text, kind, isPill := v.cell(3, acolVerdict)
+	if text != "fail" || kind != pillBad || !isPill {
+		t.Errorf("run 2's verdict = %q (%v, pill %v), want the record's fail", text, kind, isPill)
+	}
+	if text, kind, _ := v.cell(2, acolVerdict); text != "pass" || kind != pillGood {
+		t.Errorf("run 1's verdict = %q (%v), want the campaign's pass", text, kind)
 	}
 }
 

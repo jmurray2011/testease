@@ -2,11 +2,14 @@ package main
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/test"
+
+	"github.com/jmurray2011/testease/internal/record"
 )
 
 // Fyne grows a window to fit whatever its content asks for. Nothing on a
@@ -105,5 +108,58 @@ func TestARunStartedHereIsShownUnderActivity(t *testing.T) {
 	a := s.current.(*activityView)
 	if got := a.cellText(0, acolCommand); got != "run hello" {
 		t.Errorf("activity = %q", got)
+	}
+}
+
+// The sidebar highlights the section the screen showing belongs to, which is
+// the one its back button names. A record opened over Home from the command
+// palette says "Runs" and is under Runs; a comparison started from the Runs
+// screen is under Runs; and a screen gone back to highlights its own section,
+// not the one last visited.
+func TestTheSidebarHighlightsTheSectionTheScreenBelongsTo(t *testing.T) {
+	test.NewTempApp(t)
+
+	runs := t.TempDir()
+	a := installCheck(t, runs, "install-check-20261120T100000Z")
+	b := installCheck(t, runs, "install-check-20261121T100000Z")
+	matrix := docsCompat(t, runs)
+
+	w := test.NewWindow(nil)
+	defer w.Close()
+	s := newShell(w, runs, "--runs-dir", func(string) {})
+	w.SetContent(s.content)
+	if s.section != sectionHome {
+		t.Fatalf("opens on %v, want Home", s.section)
+	}
+
+	// Opened over Home, as the palette opens a run.
+	s.openRecord(matrix, "Runs", s.showRuns)
+	m := s.current.(*detailView)
+	if s.section != sectionRuns {
+		t.Errorf("a record whose back says Runs is under %v", sectionNames[s.section])
+	}
+	// A cell of it keeps the matrix run's section.
+	s.openRecord(filepath.Join(matrix, record.CellsDir, "1.0.10+7.2.6"), "Matrix", func() { s.show(m, m.content) })
+	if s.current == m {
+		t.Fatal("the cell did not open")
+	}
+	if s.section != sectionRuns {
+		t.Errorf("a matrix cell is under %v, want Runs", sectionNames[s.section])
+	}
+
+	s.showHome()
+	s.compareRecords([]string{a, b}, "Runs", s.showRuns)
+	if _, ok := s.current.(*compareView); !ok || s.section != sectionRuns {
+		t.Errorf("showing %T under %v, want a comparison under Runs", s.current, sectionNames[s.section])
+	}
+
+	// A record from Home, then somewhere else, then back to the record.
+	s.showHome()
+	s.openRecord(a, "Home", s.showHome)
+	d := s.current.(*detailView)
+	s.showScenarios()
+	s.show(d, d.content)
+	if s.section != sectionHome {
+		t.Errorf("back on a record opened from Home, the sidebar highlights %v", sectionNames[s.section])
 	}
 }

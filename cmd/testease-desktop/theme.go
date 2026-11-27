@@ -33,6 +33,12 @@ func hex(v uint32) color.Color {
 //
 // Disabled is also what Fyne draws low-importance labels in - captions, counts,
 // the footer - so it is a readable grey rather than a washed-out one.
+//
+// Buttons get colours of their own. Left to Fyne's defaults, a button is a
+// near-background grey that reads as disabled, and a disabled one cannot be
+// told from an enabled one. An enabled button is a step off the background
+// and off the sidebar's grey; a disabled one is nearer the background, with
+// its text in the disabled grey.
 var (
 	lightPalette = map[fyne.ThemeColorName]color.Color{
 		theme.ColorNameBackground:          hex(0xffffff),
@@ -45,6 +51,9 @@ var (
 		theme.ColorNameSelection:           hex(0xe3e8f8),
 		theme.ColorNameInputBorder:         hex(0xcfd0d6),
 		theme.ColorNameDisabled:            hex(0x6b6c74),
+		theme.ColorNameButton:              hex(0xdfe2e9),
+		theme.ColorNameDisabledButton:      hex(0xf0f0f3),
+		theme.ColorNamePressed:             hex(0xc9cedb),
 		colorNav:                           hex(0xf4f4f6),
 		colorMuted:                         hex(0x55565e),
 		colorSelected:                      hex(0xe3e8f8),
@@ -68,6 +77,9 @@ var (
 		theme.ColorNameSelection:           hex(0x26324f),
 		theme.ColorNameInputBorder:         hex(0x3a3c44),
 		theme.ColorNameDisabled:            hex(0x8e8f98),
+		theme.ColorNameButton:              hex(0x30323a),
+		theme.ColorNameDisabledButton:      hex(0x222328),
+		theme.ColorNamePressed:             hex(0x3d4150),
 		colorNav:                           hex(0x1f2025),
 		colorMuted:                         hex(0xa3a4ad),
 		colorSelected:                      hex(0x26324f),

@@ -41,7 +41,7 @@ type batchesView struct {
 }
 
 func newBatchesView(dir string, onOpen func(browse.Batch)) *batchesView {
-	v := &batchesView{dir: dir, onOpen: onOpen, count: widget.NewLabel(""), message: message(), run: newAction("Run batch…", theme.MediaPlayIcon())}
+	v := &batchesView{dir: dir, onOpen: onOpen, count: widget.NewLabel(""), message: message(), run: primaryAction("Run batch…", theme.MediaPlayIcon())}
 	v.table = listing(func() int { return len(v.all) }, batchTitles, batchWidths, bcolBatch, v.cell,
 		func(row int) { v.onOpen(v.all[row]) })
 	refresh := widget.NewButtonWithIcon("Refresh", theme.ViewRefreshIcon(), v.reload)
@@ -136,7 +136,7 @@ type batchView struct {
 }
 
 func newBatchView(runsDir string, b browse.Batch, back func(), openRun func(string)) *batchView {
-	v := &batchView{runsDir: runsDir, b: b, openRun: openRun, problem: message(), judge: newAction("Judge batch", theme.ConfirmIcon())}
+	v := &batchView{runsDir: runsDir, b: b, openRun: openRun, problem: message(), judge: primaryAction("Judge batch", theme.ConfirmIcon())}
 
 	top := backHeader("Batches", back, b.ID,
 		container.NewCenter(newPill(b.Status, groupStatusKind(b.Status))), v.judge.Button, openFolderButton(b.Dir))

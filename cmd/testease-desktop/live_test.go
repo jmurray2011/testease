@@ -1,7 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
+	"image"
+	"image/jpeg"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +12,7 @@ import (
 
 	"fyne.io/fyne/v2/test"
 
+	"github.com/jmurray2011/testease/internal/livebrowser"
 	"github.com/jmurray2011/testease/internal/record"
 )
 
@@ -146,5 +150,70 @@ func TestLiveViewShowsTheRunningStepAndFollowsIt(t *testing.T) {
 	}
 	if !strings.Contains(v.stdout.Text(), "configuring") {
 		t.Errorf("stdout = %q, want the finished step's output kept", v.stdout.Text())
+	}
+}
+
+func TestLiveViewShowsTheNewestBrowserFrame(t *testing.T) {
+	test.NewTempApp(t)
+	runs := t.TempDir()
+	dir := filepath.Join(runs, "smoke-20261127T000000Z")
+	writeEvents(t, dir, started(2, "BROWSER: sign in", "2026-11-27T00:00:00Z"))
+
+	ws, err := os.MkdirTemp(runs, livebrowser.WorkspacePattern[:len(livebrowser.WorkspacePattern)-1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	live := filepath.Join(ws, livebrowser.Dir)
+	if err := os.MkdirAll(live, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	abs, _ := filepath.Abs(dir)
+	owner := fmt.Sprintf(`{"record":%q,"step":2}`, abs)
+	if err := os.WriteFile(filepath.Join(live, livebrowser.OwnerFile), []byte(owner), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	v := newLiveView()
+	v.dir = dir
+	v.update()
+	if v.frame.Resource != nil || v.frameNote.Text != noFrames {
+		t.Errorf("before a frame: resource %v, note %q; want none and the explanation", v.frame.Resource, v.frameNote.Text)
+	}
+
+	var jpg bytes.Buffer
+	if err := jpeg.Encode(&jpg, image.NewRGBA(image.Rect(0, 0, 4, 4)), nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(live, "frame-7.jpg"), jpg.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(live, "frame-7.json"), []byte(`{"url":"https://app.example/login"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	v.update()
+	if v.frame.Resource == nil {
+		t.Fatal("the frame is not shown")
+	}
+	if !strings.Contains(v.frameNote.Text, "https://app.example/login") {
+		t.Errorf("note = %q, want the page's address", v.frameNote.Text)
+	}
+
+	// The step ends and its workspace goes: the last frame stays, said to be
+	// the last.
+	shown := v.frame.Resource
+	_ = os.RemoveAll(ws)
+	writeEvents(t, dir, started(2, "BROWSER: sign in", "2026-11-27T00:00:00Z"), operation(2))
+	v.update()
+	if v.frame.Resource != shown || !strings.Contains(v.frameNote.Text, "last frame") {
+		t.Errorf("after the step: resource kept %v, note %q", v.frame.Resource == shown, v.frameNote.Text)
+	}
+}
+
+func TestJobsAreStartedWithLiveBrowserUnlessSetAlready(t *testing.T) {
+	if got := jobEnv([]string{"PATH=/bin"}); got[len(got)-1] != "TESTEASE_LIVE_BROWSER=1" {
+		t.Errorf("jobEnv = %v, want live browser on", got)
+	}
+	if got := jobEnv([]string{"TESTEASE_LIVE_BROWSER=0"}); len(got) != 1 {
+		t.Errorf("jobEnv = %v, want the person's own setting kept", got)
 	}
 }

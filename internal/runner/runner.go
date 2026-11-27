@@ -121,6 +121,11 @@ type Options struct {
 	// committed and params are recorded, so neither can hold one.
 	DriveSecrets map[string]string
 
+	// LiveBrowser has drive steps save what their Playwright page shows,
+	// about once a second, so a person can watch it. The frames stay in the
+	// step's workspace and never enter the record. See prepareLive.
+	LiveBrowser bool
+
 	// Observe receives lifecycle events after the record writer accepted them.
 	// It is presentation only: observers cannot alter evidence or stop a run,
 	// and they are never called for an event the writer rejected.

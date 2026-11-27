@@ -12,9 +12,11 @@ import (
 	"time"
 
 	"fyne.io/fyne/v2"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/widget"
 
+	"github.com/jmurray2011/testease/internal/livebrowser"
 	"github.com/jmurray2011/testease/internal/record"
 )
 
@@ -32,7 +34,9 @@ const liveLimit = 128 << 10
 type liveStep struct {
 	// Cell is the matrix cell the step belongs to, or "" for a run without
 	// cells.
-	Cell    string
+	Cell string
+	// Dir is the record the step writes to: the run's, or its cell's.
+	Dir     string
 	Seq     int
 	Label   string
 	Host    string
@@ -101,7 +105,7 @@ func runningIn(dir, cell string) []liveStep {
 				Host  string `json:"host"`
 			}
 			_ = json.Unmarshal(e.Data, &d)
-			open[e.Step] = liveStep{Cell: cell, Seq: e.Step, Label: d.Label, Host: d.Host, Started: e.TS}
+			open[e.Step] = liveStep{Cell: cell, Dir: dir, Seq: e.Step, Label: d.Label, Host: d.Host, Started: e.TS}
 		case record.KindOperation:
 			delete(open, e.Step)
 		case record.KindRunFinished:
@@ -187,6 +191,12 @@ type liveView struct {
 	shownOut        string
 	shownErr        string
 	lastOut, lastEr fileMark
+
+	// The browser tab: the newest frame a drive step's page saved.
+	frame     *canvas.Image
+	frameNote *widget.Label
+	lastFrame fileMark
+	frameStep string
 	// last is the step shown most recently, kept on screen after it ends so
 	// its final lines stay readable between steps.
 	last *liveStep
@@ -222,6 +232,7 @@ func newLiveView() *liveView {
 	v.tabs = container.NewAppTabs(
 		container.NewTabItem("stdout", v.outScroll),
 		container.NewTabItem("stderr", v.errScroll),
+		container.NewTabItem("Browser", v.browserPane()),
 	)
 	v.content = container.NewBorder(
 		container.NewBorder(nil, nil, nil, v.picker, v.heading), nil, nil, nil, v.tabs,
@@ -337,6 +348,7 @@ func (v *liveView) update() {
 
 	v.follow(cur.Out, &v.lastOut, &v.shownOut, v.stdout, v.outScroll)
 	v.follow(cur.Err, &v.lastEr, &v.shownErr, v.stderr, v.errScroll)
+	v.showFrame(*cur, running)
 }
 
 // follow shows the end of one output file if it changed since the last look,
@@ -390,4 +402,73 @@ func newLiveScreen(dir, backLabel string, back func()) *liveScreen {
 	)
 	v.live.watch(dir)
 	return v
+}
+
+// noFrames is what the browser tab says when a step has no frames to show.
+const noFrames = "No browser frames for this step. A drive step shows its Playwright page here, about once a second, " +
+	"when its run was started with live browser on: runs this app starts have it, and from a terminal it is " +
+	"testease run --live-browser. Frames are shown while the step runs and are never kept in the record."
+
+func (v *liveView) browserPane() fyne.CanvasObject {
+	v.frame = canvas.NewImageFromResource(nil)
+	v.frame.FillMode = canvas.ImageFillContain
+	v.frame.ScaleMode = canvas.ImageScaleSmooth
+	v.frameNote = widget.NewLabel(noFrames)
+	v.frameNote.Wrapping = fyne.TextWrapWord
+	v.frameNote.Importance = widget.LowImportance
+	return container.NewBorder(nil, v.frameNote, nil, nil, v.frame)
+}
+
+// showFrame shows the newest frame the step's browser saved, if it changed.
+func (v *liveView) showFrame(s liveStep, running bool) {
+	if v.frameStep != s.name() {
+		// Another step: the last one's picture is not this one's.
+		v.frameStep, v.lastFrame = s.name(), fileMark{}
+		v.frame.Resource = nil
+		v.frame.Refresh()
+	}
+	f, ok := livebrowser.Frame{}, false
+	if running {
+		for _, runs := range runsDirsOf(s.Dir) {
+			if f, ok = livebrowser.Find(runs, s.Dir, s.Seq); ok {
+				break
+			}
+		}
+	}
+	if !ok {
+		if v.lastFrame.path != "" && !running {
+			// The step ended and its workspace went with its frames: the
+			// last one stays, said to be the last.
+			v.frameNote.SetText("The step has finished; this is the last frame it showed. Frames are not kept in the record.")
+			return
+		}
+		if v.lastFrame.path == "" {
+			v.frameNote.SetText(noFrames)
+		}
+		return
+	}
+	mark := fileMark{path: f.Path, mod: f.At}
+	note := "Page: " + orDash(f.URL) + " · " + time.Since(f.At).Round(time.Second).String() + " ago"
+	v.frameNote.SetText(note)
+	if mark == v.lastFrame {
+		return
+	}
+	body, err := os.ReadFile(f.Path)
+	if err != nil || len(body) == 0 {
+		return
+	}
+	v.lastFrame = mark
+	v.frame.Resource = fyne.NewStaticResource(fmt.Sprintf("frame-%d.jpg", f.At.UnixNano()), body)
+	v.frame.Refresh()
+}
+
+// runsDirsOf is where a record's drive workspaces can be: beside the run, and
+// for a cell, beside the run the cell belongs to.
+func runsDirsOf(recordDir string) []string {
+	parent := filepath.Dir(recordDir)
+	dirs := []string{parent}
+	if filepath.Base(parent) == record.CellsDir {
+		dirs = append(dirs, filepath.Dir(filepath.Dir(parent)))
+	}
+	return dirs
 }

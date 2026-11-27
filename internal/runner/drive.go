@@ -99,6 +99,13 @@ type DriveSpec struct {
 	// do: a drive container the timeout orphaned keeps driving the target,
 	// and reap has to be able to prove whose it was.
 	Labels map[string]string
+
+	// WhileRemote, when set, is called once a remote drive's container is
+	// running, with a way to read a file inside it, and its context ends when
+	// the container does. A local drive shares its workspace through the bind
+	// mount and never calls it. The live browser view uses it to fetch frames
+	// a remote drive could otherwise only hand back after it finished.
+	WhileRemote func(ctx context.Context, read func(ctx context.Context, path string) ([]byte, error))
 }
 
 // Networked is a target that lives on a network a container can be attached to.
@@ -187,11 +194,14 @@ func (r *run) drive(ctx context.Context, seq int, step scenario.Step, opts targe
 	env[WorkspaceEnv] = ContainerWorkspace
 	env[FactsEnv] = ContainerWorkspace + "/" + factsFile
 	env[ScenarioEnv] = ContainerScenario
+	var whileRemote func(context.Context, func(context.Context, string) ([]byte, error))
 	if r.opt.LiveBrowser {
 		// Frames are a view, not a measurement: a step whose workspace will
 		// not take the hook runs without them rather than not at all.
 		if err := prepareLive(workspace, r.dir, seq, step.Label, env); err != nil {
 			r.opt.Log.Warn("the live browser is off for this step", "step", seq, "error", err)
+		} else {
+			whileRemote = remoteLive(workspace)
 		}
 	}
 
@@ -206,6 +216,7 @@ func (r *run) drive(ctx context.Context, seq int, step scenario.Step, opts targe
 		Media:         r.media(step.Media),
 		Network:       targetNetwork(r.targets[step.Host]),
 		Labels:        r.driveLabels(step),
+		WhileRemote:   whileRemote,
 	}, opts)
 }
 

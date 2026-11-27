@@ -466,8 +466,13 @@ marks its screenshots internal, so they do not appear as steps in the suite's
 report or trace. They do still take a little time inside the page, so the record
 notes `drive.live_browser: on` among its measurement conditions.
 
-The frames only reach the app from a local drive. A remote drive copies its
-workspace back only after the step ends, so the Browser tab stays empty for it.
+A probe that runs Playwright on its own host, such as a docker "browser" host
+running node inline, is watched too. When the probe's text names
+`playwright` and the host's session can be read while a script runs (docker
+and ssh on Linux), testease puts the hook in the host's `/tmp`, adds it to the
+probe's `NODE_OPTIONS`, and fetches the newest frame back about once a second.
+A drive on a remote daemon is fetched the same way. The hook and frames are
+removed from the host when the step ends.
 
 ## Secret files generated during a run
 

@@ -261,6 +261,15 @@ type Session interface {
 	Close() error
 }
 
+// LiveFetcher is a session that can read a file while a script it runs is
+// still running, on a POSIX shell. The live browser view fetches a frame from
+// a probe's browser about once a second; a session that serialises its
+// commands, or runs a shell that cannot take the hook, says no here and the
+// step simply runs without frames.
+type LiveFetcher interface {
+	FetchesWhileRunning() bool
+}
+
 // RunOpts is how a caller says where the output goes and how long it may take.
 //
 // The streams are the caller's writers rather than paths the backend picks:

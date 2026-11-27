@@ -22,6 +22,10 @@
   const every = Number(process.env.TESTEASE_LIVE_EVERY_MS) || 1000;
   const frame = path.join(dir, `frame-${process.pid}.jpg`);
   const about = path.join(dir, `frame-${process.pid}.json`);
+  const latest = path.join(dir, 'latest.jpg');
+  const latestAbout = path.join(dir, 'latest.json');
+  // Each process stages under its own name, so two never write one file.
+  const mine = `.${process.pid}.tmp`;
   const contexts = new Set();
   let current = null;
   let busy = false;
@@ -83,8 +87,15 @@
         : await shoot();
       fs.writeFileSync(frame + '.tmp', body);
       fs.renameSync(frame + '.tmp', frame);
-      fs.writeFileSync(about + '.tmp', JSON.stringify({ url: p.url(), at: new Date().toISOString() }));
+      const said = JSON.stringify({ url: p.url(), at: new Date().toISOString() });
+      fs.writeFileSync(about + '.tmp', said);
       fs.renameSync(about + '.tmp', about);
+      // The same frame under one fixed name, for a runner that has to fetch
+      // it from another machine by name rather than list the directory.
+      fs.writeFileSync(latest + mine, body);
+      fs.renameSync(latest + mine, latest);
+      fs.writeFileSync(latestAbout + mine, said);
+      fs.renameSync(latestAbout + mine, latestAbout);
     } catch (_) {
       // A page mid-navigation, closing, or busy: the next tick tries again.
     } finally {

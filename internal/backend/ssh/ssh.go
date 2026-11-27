@@ -303,6 +303,10 @@ func elevate(line string) string {
 	return "sudo -n -- sh -c " + shellQuote(line)
 }
 
+// FetchesWhileRunning: each command is its own channel on the connection, so
+// a fetch runs beside a script rather than after it.
+func (s *Session) FetchesWhileRunning() bool { return true }
+
 // Fetch retrieves a file.
 func (s *Session) Fetch(ctx context.Context, remote string) (io.ReadCloser, error) {
 	var out bytes.Buffer

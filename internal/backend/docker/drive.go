@@ -37,6 +37,13 @@ type DriveSpec struct {
 	// the timeout killed the CLI of keeps driving the target - can be tied
 	// back to the run that made it and reaped like any other leftover.
 	Labels map[string]string
+
+	// WhileRemote, when set, is called once a remote drive's container is
+	// running, with a way to read a file inside it, and its context ends when
+	// the container does. A local drive shares its workspace through the bind
+	// mount and never calls it. The live browser view uses it to fetch frames
+	// a remote drive could otherwise only hand back after it finished.
+	WhileRemote func(ctx context.Context, read func(ctx context.Context, path string) ([]byte, error))
 }
 
 // Drive runs a container here and streams its output the same way a probe's is
@@ -227,7 +234,9 @@ func (c Client) DriveRemote(ctx context.Context, spec DriveSpec, opt target.RunO
 	cmd.Stderr = opt.Stderr
 
 	started := time.Now()
+	stopLive := c.whileRemote(ctx, name, spec)
 	runErr := cmd.Run()
+	stopLive()
 	result := target.Result{Duration: time.Since(started)}
 
 	if runCtx.Err() != nil {
@@ -403,4 +412,33 @@ func pathArchive(source, destination string, uid, gid int, readOnly, requireDire
 		return nil, err
 	}
 	return body.Bytes(), nil
+}
+
+// whileRemote hands a remote drive's running container to spec.WhileRemote,
+// so a caller can read files from it before the workspace crosses back. The
+// returned stop ends that and waits for it.
+func (c Client) whileRemote(ctx context.Context, name string, spec DriveSpec) (stop func()) {
+	if spec.WhileRemote == nil {
+		return func() {}
+	}
+	read := func(ctx context.Context, file string) ([]byte, error) {
+		// Not Output, which trims the trailing newline a binary file may end in.
+		cmd := c.command(ctx, "exec", name, "cat", file)
+		var out bytes.Buffer
+		cmd.Stdout = &out
+		if err := cmd.Run(); err != nil {
+			return nil, err
+		}
+		return out.Bytes(), nil
+	}
+	watchCtx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		spec.WhileRemote(watchCtx, read)
+	}()
+	return func() {
+		cancel()
+		<-done
+	}
 }

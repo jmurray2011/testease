@@ -878,7 +878,9 @@ func (r *run) step(ctx context.Context, seq int, step scenario.Step) error {
 		// One command, one container, and nothing to exec into afterwards.
 		result, runErr = oneShot.RunOnce(ctx, script, step.Args, opts)
 	} else {
+		live := r.startSessionLive(ctx, session, script, seq, step.Label, &opts)
 		result, runErr = session.RunScript(ctx, script, step.Args, opts)
+		live.end(ctx)
 	}
 	elapsed := result.Duration
 	if elapsed == 0 {

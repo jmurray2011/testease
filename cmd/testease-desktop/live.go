@@ -405,7 +405,7 @@ func newLiveScreen(dir, backLabel string, back func()) *liveScreen {
 }
 
 // noFrames is what the browser tab says when a step has no frames to show.
-const noFrames = "No browser frames for this step. A drive step shows its Playwright page here, about once a second, " +
+const noFrames = "No browser frames for this step. A step that drives Playwright shows its page here, about once a second, " +
 	"when its run was started with live browser on: runs this app starts have it, and from a terminal it is " +
 	"testease run --live-browser. Frames are shown while the step runs and are never kept in the record."
 

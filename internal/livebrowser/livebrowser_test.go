@@ -1,9 +1,11 @@
 package livebrowser
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -64,5 +66,42 @@ func TestFindIsNothingForAnotherRecordOrNoFrames(t *testing.T) {
 	workspace(t, runs, Owner{Record: rec, Step: 1})
 	if f, ok := Find(runs, rec, 1); ok {
 		t.Errorf("Find = %+v before the suite saved a frame", f)
+	}
+}
+
+func TestMirrorBringsTheNewestFrameHereForTheViewerToFind(t *testing.T) {
+	runs := t.TempDir()
+	rec := filepath.Join(runs, "saml-20261127T000000Z")
+	root, frames, err := Prepare(runs, Owner{Record: rec, Step: 4})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	fetch := func(_ context.Context, name string) ([]byte, error) {
+		switch name {
+		case Latest:
+			return []byte("jpeg"), nil
+		case LatestAbout:
+			return []byte(`{"url":"https://idp/login"}`), nil
+		}
+		return nil, os.ErrNotExist
+	}
+	done := make(chan struct{})
+	go func() { defer close(done); Mirror(ctx, fetch, frames) }()
+
+	deadline := time.Now().Add(5 * time.Second)
+	var f Frame
+	var ok bool
+	for time.Now().Before(deadline) && !ok {
+		time.Sleep(50 * time.Millisecond)
+		f, ok = Find(runs, rec, 4)
+	}
+	cancel()
+	<-done
+	if !ok || f.URL != "https://idp/login" || filepath.Dir(f.Path) != frames {
+		t.Errorf("Find = %+v, %v; want the mirrored frame in %s", f, ok, frames)
+	}
+	if !strings.HasPrefix(filepath.Base(root), ".testease-live-") {
+		t.Errorf("mirror root = %s", root)
 	}
 }

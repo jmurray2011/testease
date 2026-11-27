@@ -308,6 +308,10 @@ func (s *Session) SHA256(ctx context.Context, path string) (string, error) {
 	return "sha256:" + raw, nil
 }
 
+// FetchesWhileRunning: each exec is its own process, so a fetch never waits on
+// a running script. A Windows container has no POSIX /tmp for the hook.
+func (s *Session) FetchesWhileRunning() bool { return !s.windows() }
+
 // Fetch retrieves a file by exec-cat rather than docker cp. A tmpfs path is
 // unreadable by docker cp - measured - and probes write where they like. A
 // Windows container has no cat, so the bytes come back base64-encoded through

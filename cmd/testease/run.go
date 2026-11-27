@@ -609,6 +609,7 @@ func (d dockerDriver) Drive(ctx context.Context, spec runner.DriveSpec, opt targ
 		Media:         spec.Media,
 		Network:       spec.Network,
 		Labels:        spec.Labels,
+		WhileRemote:   spec.WhileRemote,
 	}
 	local, name, err := daemonIsLocal(ctx, d.client)
 	if err != nil {

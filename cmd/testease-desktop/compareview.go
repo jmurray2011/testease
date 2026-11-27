@@ -43,7 +43,7 @@ type compareView struct {
 }
 
 func newCompareView(dirs []string, backLabel string, back func()) (*compareView, error) {
-	v := &compareView{reproduce: newAction("Check reproducibility", theme.ConfirmIcon())}
+	v := &compareView{reproduce: primaryAction("Check reproducibility", theme.ConfirmIcon())}
 	for _, dir := range dirs {
 		s, err := loadSide(dir)
 		if err != nil {

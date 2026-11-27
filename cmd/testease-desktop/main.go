@@ -107,6 +107,9 @@ type shell struct {
 	// current is the screen showing now, so the refresh knows what to
 	// re-read and back knows where it is.
 	current any
+	// shown is the section each recent screen was first shown under, so a
+	// screen gone back to highlights its own section, not the last one's.
+	shown []shownScreen
 
 	tools tools
 	jobs  []*jobView
@@ -203,8 +206,10 @@ func (s *shell) setDir(dir, from string) {
 	if dir == "" {
 		s.where.SetText("not chosen")
 	} else {
+		// Where the folder was taken from is on the Settings screen; the
+		// sidebar has room for the folder and no more.
 		name, in := sidebarPath(dir)
-		s.where.SetText(strings.TrimSpace(name + "\n" + in + "\n(" + from + ")"))
+		s.where.SetText(strings.TrimSpace(name + "\n" + in))
 	}
 	s.home = newHomeView(dir, func(rec string) { s.openRecord(rec, "Home", s.showHome) }, s.showScenarioRuns)
 	s.runs = newRunsView(dir, func(rec string) { s.openRecord(rec, "Runs", s.showRuns) })
@@ -213,6 +218,7 @@ func (s *shell) setDir(dir, from string) {
 	s.batches.run.set(s.chooseBatchFile)
 	s.campaigns = newCampaignsView(dir, func(c browse.Campaign) { s.openCampaign(c.ID) })
 	s.campaigns.run.set(s.chooseCampaign)
+	s.shown = nil
 	s.showHome()
 }
 
@@ -285,6 +291,27 @@ func (s *shell) openCampaign(id string) {
 	s.show(v, v.content)
 }
 
+// backSections is the section of each screen a record or a comparison can
+// say back goes to, by the name its back button carries. The sidebar
+// highlights that section, so it agrees with the back button: a record
+// opened from the command palette says "Runs", and is under Runs, whatever
+// screen the palette was opened over. A name not here - a cell's matrix run,
+// a job, a record - keeps the section showing.
+var backSections = map[string]navSection{
+	"Home":      sectionHome,
+	"Runs":      sectionRuns,
+	"Batch":     sectionBatches,
+	"Campaign":  sectionCampaigns,
+	"Scenarios": sectionScenarios,
+	"Targets":   sectionTargets,
+}
+
+func (s *shell) highlightFrom(from string) {
+	if sec, ok := backSections[from]; ok {
+		s.highlight(sec)
+	}
+}
+
 // openRecord opens a record, with back naming and going to wherever it was
 // opened from.
 func (s *shell) openRecord(dir, from string, back func()) {
@@ -298,16 +325,52 @@ func (s *shell) openRecord(dir, from string, back func()) {
 	v.render.set(func() { s.chooseRender(dir) })
 	v.compare.set(func() { s.chooseCompare(dir, func() { s.show(v, v.content) }) })
 	v.again.set(func() { s.runAgain(v) })
+	s.highlightFrom(from)
 	s.show(v, v.content)
 }
 
 // show puts a screen in the body. Fyne grows a window to whatever its content
 // asks for, so a screen sits in a scroll: one that asks for more room than the
 // window has scrolls, and the window keeps the size the person gave it.
+//
+// A screen shown again, by back, highlights the section it was first shown
+// under: going back to a record from the scenario form Run again opened
+// highlights the record's section, not Scenarios.
 func (s *shell) show(view any, screen fyne.CanvasObject) {
+	s.rememberSection(view)
 	s.current = view
 	s.body.Objects = []fyne.CanvasObject{container.NewScroll(screen)}
 	s.body.Refresh()
+}
+
+// shownScreen is a screen and the section it was first shown under.
+type shownScreen struct {
+	view    any
+	section navSection
+}
+
+// recentScreens is how many screens back the sidebar remembers sections for.
+// Back goes a few screens at most; holding every screen ever opened would
+// hold every record's output with it.
+const recentScreens = 32
+
+// rememberSection highlights the section a screen was first shown under when
+// it is shown again, and otherwise notes the section it is shown under now.
+func (s *shell) rememberSection(view any) {
+	for i, sc := range s.shown {
+		if sc.view == view {
+			if sc.section != s.section {
+				s.highlight(sc.section)
+			}
+			// Most recent last, so the oldest go first.
+			s.shown = append(append(s.shown[:i:i], s.shown[i+1:]...), sc)
+			return
+		}
+	}
+	s.shown = append(s.shown, shownScreen{view: view, section: s.section})
+	if len(s.shown) > recentScreens {
+		s.shown = s.shown[len(s.shown)-recentScreens:]
+	}
 }
 
 // tick re-reads the screen showing, so a run that finishes or a verdict that

@@ -251,3 +251,43 @@ func TestACellOfAStoppedMatrixRunIsNotCalledRunning(t *testing.T) {
 		t.Errorf("word while the run is written %q", got)
 	}
 }
+
+// A matrix run no judge has read as a whole still has its cells' verdicts.
+// The Verdicts panel says so, and what they came to, rather than "not judged"
+// beside a grid of passes and failures.
+func TestAMatrixRunsVerdictsPanelAgreesWithItsGrid(t *testing.T) {
+	test.NewTempApp(t)
+	v, err := newDetailView(docsCompat(t, t.TempDir()), func() {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := v.verdictsText()
+	if strings.Contains(got, "Not judged yet") || !strings.Contains(got, "1 passed, 1 failed") || !strings.Contains(got, "as a whole") {
+		t.Errorf("verdicts %q", got)
+	}
+}
+
+// A cell's status pill is as wide as its word: the list's rows are made for
+// an empty pill, and are laid out again for the word they show.
+func TestACellsPillIsNotCutOff(t *testing.T) {
+	test.NewTempApp(t)
+	v, err := newDetailView(docsCompat(t, t.TempDir()), func() {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := test.NewWindow(v.content)
+	defer w.Close()
+	w.Resize(openingSize)
+	found := false
+	for _, o := range test.LaidOutObjects(v.cells) {
+		if p, ok := o.(*pill); ok && p.Text != "" {
+			found = true
+			if p.Size().Width < p.MinSize().Width {
+				t.Errorf("pill %q is %v wide, needs %v", p.Text, p.Size().Width, p.MinSize().Width)
+			}
+		}
+	}
+	if !found {
+		t.Error("no cell pill on screen")
+	}
+}

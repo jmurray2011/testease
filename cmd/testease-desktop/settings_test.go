@@ -42,6 +42,12 @@ func TestTheSidebarShowsTheRunsDirectorysNameWhole(t *testing.T) {
 	if name != "scenario-runs" || in != "in …"+sep+"testease-scenarios" {
 		t.Errorf("sidebarPath(%q) = %q, %q", long, name, in)
 	}
+	// A long parent, like a test's temporary folder, is cut in the middle
+	// rather than at its end, so it does not run off the sidebar.
+	tmp := filepath.Join(sep+"tmp", "TestZZMatrix4086191234", "001")
+	if name, in := sidebarPath(tmp); name != "001" || in != "in …"+sep+"TestZZMat…86191234" {
+		t.Errorf("sidebarPath(%q) = %q, %q", tmp, name, in)
+	}
 	if name, in := sidebarPath("runs"); name != "runs" || in != "" {
 		t.Errorf("sidebarPath(runs) = %q, %q", name, in)
 	}

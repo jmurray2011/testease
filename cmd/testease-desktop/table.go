@@ -31,6 +31,9 @@ func listing(rows func() int, titles []string, widths []float32, mono int, cell 
 				label.Hide()
 				box.Show()
 				box.Objects[0].(*pill).Set(text, kind)
+				// Lay the box out again for this pill's word: it was sized
+				// for whatever the cell showed before.
+				box.Refresh()
 				return
 			}
 			box.Hide()
@@ -126,6 +129,14 @@ func backHeader(backLabel string, back func(), id string, right ...fyne.CanvasOb
 type action struct {
 	*widget.Button
 	do func()
+}
+
+// primaryAction is the one action a screen is for, drawn in the primary
+// colour so it is the first thing found. A screen has at most one.
+func primaryAction(label string, icon fyne.Resource) *action {
+	a := newAction(label, icon)
+	a.Importance = widget.HighImportance
+	return a
 }
 
 func newAction(label string, icon fyne.Resource) *action {

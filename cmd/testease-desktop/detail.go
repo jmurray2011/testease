@@ -68,6 +68,8 @@ type detailView struct {
 	judge, render, compare *action
 	// again opens the record's scenario with the form filled from it.
 	again *action
+	// watch follows a record still being written, step output and all.
+	watch *action
 }
 
 func newDetailView(dir string, back func()) (*detailView, error) {
@@ -82,12 +84,12 @@ func newDetailViewFrom(dir, backLabel string, back func()) (*detailView, error) 
 	v := &detailView{
 		d: d, selected: -1, backLabel: backLabel, back: back, judge: primaryAction("Judge", theme.ConfirmIcon()),
 		render: newAction("Render…", theme.DocumentIcon()), compare: newAction("Compare…", theme.ListIcon()),
-		again: newAction("Run again…", theme.MediaReplayIcon()),
+		again: newAction("Run again…", theme.MediaReplayIcon()), watch: newAction("Watch live", theme.VisibilityIcon()),
 	}
 
 	// Header: where this is, what it measured, and how to get at the files.
 	status := newPill(statusOf(d.Run), statusKind(statusOf(d.Run)))
-	top := backHeader(backLabel, back, d.RunID, container.NewCenter(status), v.again.Button, v.judge.Button, v.render.Button, v.compare.Button, openFolderButton(d.Dir))
+	top := backHeader(backLabel, back, d.RunID, container.NewCenter(status), v.watch.Button, v.again.Button, v.judge.Button, v.render.Button, v.compare.Button, openFolderButton(d.Dir))
 
 	v.meta = metaParts(d)
 	metaLabel := widget.NewLabel(strings.Join(v.meta, "    "))

@@ -325,6 +325,12 @@ func (s *shell) openRecord(dir, from string, back func()) {
 	v.render.set(func() { s.chooseRender(dir) })
 	v.compare.set(func() { s.chooseCompare(dir, func() { s.show(v, v.content) }) })
 	v.again.set(func() { s.runAgain(v) })
+	if statusOf(v.d.Run) == statusRunning {
+		v.watch.set(func() {
+			l := newLiveScreen(dir, "Record", func() { s.show(v, v.content) })
+			s.show(l, l.content)
+		})
+	}
 	s.highlightFrom(from)
 	s.show(v, v.content)
 }
@@ -337,6 +343,10 @@ func (s *shell) openRecord(dir, from string, back func()) {
 // under: going back to a record from the scenario form Run again opened
 // highlights the record's section, not Scenarios.
 func (s *shell) show(view any, screen fyne.CanvasObject) {
+	// A live screen left behind stops reading the record.
+	if l, ok := s.current.(*liveScreen); ok && l != view {
+		l.live.stop()
+	}
 	s.rememberSection(view)
 	s.current = view
 	s.body.Objects = []fyne.CanvasObject{container.NewScroll(screen)}

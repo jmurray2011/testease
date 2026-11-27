@@ -37,9 +37,13 @@ type jobView struct {
 	j       *job
 	s       jobState
 
-	status  *pill
-	steps   *widget.Table
-	log     *widget.TextGrid
+	status *pill
+	steps  *widget.Table
+	log    *widget.TextGrid
+	// live follows the step the run is in, from its record; outTabs holds
+	// it beside testease's own output.
+	live    *liveView
+	outTabs *container.AppTabs
 	stop    *widget.Button
 	open    *widget.Button
 	targets *widget.Button
@@ -73,7 +77,14 @@ func newJobView(title string, args []string, runsDir string, back, showTargets f
 
 	var body fyne.CanvasObject = logPane
 	if v.isRun {
-		split := container.NewVSplit(v.steps, logPane)
+		// The step's own output is what a person watching a run wants; what
+		// testease says about the run is a tab away.
+		v.live = newLiveView()
+		v.outTabs = container.NewAppTabs(
+			container.NewTabItem("Live step output", v.live.content),
+			container.NewTabItem("testease", container.NewScroll(container.NewPadded(v.log))),
+		)
+		split := container.NewVSplit(v.steps, v.outTabs)
 		split.Offset = 0.55
 		body = split
 	}
@@ -122,6 +133,14 @@ func (v *jobView) render() {
 	}
 	if v.keptTargets() {
 		v.targets.Show()
+	}
+	if v.live != nil {
+		if dir := v.recordDir(); dir != "" {
+			v.live.watch(dir)
+		} else if v.s.Done && v.outTabs.SelectedIndex() == 0 {
+			// It ended without a record: why is in testease's output.
+			v.outTabs.SelectIndex(1)
+		}
 	}
 	out := v.s.Log
 	if !v.isRun && v.s.Stdout != "" {

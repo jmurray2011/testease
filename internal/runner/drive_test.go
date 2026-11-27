@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jmurray2011/testease/internal/livebrowser"
 	"github.com/jmurray2011/testease/internal/record"
 	"github.com/jmurray2011/testease/internal/runner"
 	"github.com/jmurray2011/testease/internal/scenario"
@@ -490,4 +491,53 @@ func factIn(t *testing.T, rec *record.Record, key string) (string, bool) {
 		}
 	}
 	return value, found
+}
+
+func TestALiveBrowserStepSavesFramesThatTheRecordDoesNotKeep(t *testing.T) {
+	t.Parallel()
+
+	// While the step runs, the hook and its owner are in the workspace and the
+	// suite's node is told to load it; a frame the suite saves is there for a
+	// viewer. Once the step ends, the workspace and its frames are gone, and
+	// the record holds none of them.
+	var during []string
+	runs := t.TempDir()
+	driver := &fakeDriver{run: func(spec runner.DriveSpec, _ target.RunOpts) (target.Result, error) {
+		live := filepath.Join(spec.Workspace, livebrowser.Dir)
+		if err := os.WriteFile(filepath.Join(live, "frame-1.jpg"), []byte("jpeg"), 0o644); err != nil {
+			return target.Result{RC: -1}, err
+		}
+		entries, _ := os.ReadDir(live)
+		for _, e := range entries {
+			during = append(during, e.Name())
+		}
+		return target.Result{RC: 0}, nil
+	}}
+	out, err := runner.Run(context.Background(), runner.Options{
+		Plan:        plan(t, driven),
+		RunsDir:     runs,
+		Tool:        record.ToolRef{Version: "0.0.0-test"},
+		Providers:   map[string]target.Provider{"fake": &endpointedProvider{target: &fakeTarget{session: &fakeSession{}}}},
+		Driver:      driver,
+		LiveBrowser: true,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if got := driver.spec.Env["NODE_OPTIONS"]; !strings.Contains(got, "--require /workspace/.testease-live/hook.cjs") {
+		t.Errorf("NODE_OPTIONS = %q, want the hook required", got)
+	}
+	if strings.Join(during, ",") != "frame-1.jpg,hook.cjs,owner.json" {
+		t.Errorf("live directory during the step = %v", during)
+	}
+	if left, _ := filepath.Glob(filepath.Join(runs, livebrowser.WorkspacePattern)); len(left) != 0 {
+		t.Errorf("workspaces left after the step: %v", left)
+	}
+	_ = filepath.WalkDir(out.Dir, func(path string, d os.DirEntry, _ error) error {
+		if d != nil && strings.HasPrefix(d.Name(), "frame-") {
+			t.Errorf("a frame reached the record: %s", path)
+		}
+		return nil
+	})
 }

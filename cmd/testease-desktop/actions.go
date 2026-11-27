@@ -144,7 +144,7 @@ func (s *shell) startJob(title string, args []string) *jobView {
 		v.fail(errors.New("no testease binary found: put testease beside this app or on PATH, or start this app with --testease <path>"))
 		return v
 	}
-	j, err := startJob(s.tools.testease, args, os.Environ(), func() { s.onUI(v.refresh) })
+	j, err := startJob(s.tools.testease, args, jobEnv(os.Environ()), func() { s.onUI(v.refresh) })
 	if err != nil {
 		v.fail(err)
 		return v
@@ -426,4 +426,17 @@ func (s *shell) startRecordJob(dir, title string, args []string) {
 	if jv := s.startJob(title, args); jv != nil {
 		jv.record = dir
 	}
+}
+
+// jobEnv is the environment a job starts with. Runs this app starts can be
+// watched, so their drive steps save browser frames for the live pane, unless
+// the person set TESTEASE_LIVE_BROWSER themselves. It is an environment value
+// rather than a flag so a batch or campaign passes it to every run it starts.
+func jobEnv(env []string) []string {
+	for _, kv := range env {
+		if strings.HasPrefix(kv, "TESTEASE_LIVE_BROWSER=") {
+			return env
+		}
+	}
+	return append(env, "TESTEASE_LIVE_BROWSER=1")
 }

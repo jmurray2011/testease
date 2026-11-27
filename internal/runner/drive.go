@@ -123,7 +123,7 @@ func isDrive(probe string) bool { return scenario.IsDrive(probe) }
 func (r *run) driveStep(ctx context.Context, seq int, step scenario.Step, opts target.RunOpts,
 	stdout, stderr *os.File, outPath, errPath string, facts *[]record.Fact, warnings *[]record.Warning,
 ) (target.Result, error) {
-	result, err := r.drive(ctx, step, opts)
+	result, err := r.drive(ctx, seq, step, opts)
 
 	_ = stdout.Sync()
 	_ = stderr.Sync()
@@ -132,7 +132,7 @@ func (r *run) driveStep(ctx context.Context, seq int, step scenario.Step, opts t
 }
 
 // drive runs the container.
-func (r *run) drive(ctx context.Context, step scenario.Step, opts target.RunOpts) (target.Result, error) {
+func (r *run) drive(ctx context.Context, seq int, step scenario.Step, opts target.RunOpts) (target.Result, error) {
 	if r.opt.Driver == nil {
 		return target.Result{RC: -1}, &PreconditionError{
 			Message: fmt.Sprintf("step %q drives a container on this machine, and this testease has no way to run one", step.Label),
@@ -187,6 +187,13 @@ func (r *run) drive(ctx context.Context, step scenario.Step, opts target.RunOpts
 	env[WorkspaceEnv] = ContainerWorkspace
 	env[FactsEnv] = ContainerWorkspace + "/" + factsFile
 	env[ScenarioEnv] = ContainerScenario
+	if r.opt.LiveBrowser {
+		// Frames are a view, not a measurement: a step whose workspace will
+		// not take the hook runs without them rather than not at all.
+		if err := prepareLive(workspace, r.dir, seq, step.Label, env); err != nil {
+			r.opt.Log.Warn("the live browser is off for this step", "step", seq, "error", err)
+		}
+	}
 
 	return r.opt.Driver.Drive(ctx, DriveSpec{
 		Image:         strings.TrimPrefix(step.Probe, DrivePrefix),

@@ -450,6 +450,25 @@ put the runs directory somewhere the daemon can see (a snap-packaged daemon
 commonly cannot see the host's `/tmp`). A remote drive uses the copy transport
 above instead of relying on the daemon to see that directory.
 
+## Watching a drive step's browser
+
+`testease run --live-browser` (or `TESTEASE_LIVE_BROWSER=1`) has each drive
+step load a small node hook through `NODE_OPTIONS`. About once a second it saves
+a JPEG of the suite's most recently active Playwright page into the step's
+workspace, and the desktop app shows it on a running record's live screen, in
+the Browser tab. Runs the desktop app starts have it on unless
+`TESTEASE_LIVE_BROWSER` is already set.
+
+The frames are a view, not evidence. They are written to the workspace, which is
+deleted when the step ends, and nothing copies them into the record. A suite
+that wants a picture kept still takes one and names it as an artifact. The hook
+marks its screenshots internal, so they do not appear as steps in the suite's
+report or trace. They do still take a little time inside the page, so the record
+notes `drive.live_browser: on` among its measurement conditions.
+
+The frames only reach the app from a local drive. A remote drive copies its
+workspace back only after the step ends, so the Browser tab stays empty for it.
+
 ## Secret files generated during a run
 
 Credentials supplied before a drive still use `--env-file`. When a target must

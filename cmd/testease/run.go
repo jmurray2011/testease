@@ -77,6 +77,8 @@ func runCmd() *cobra.Command {
 		"file of KEY=VALUE lines injected into drive steps; never recorded, so never put one in a scenario")
 	cmd.Flags().String("input-bundle", os.Getenv("TESTEASE_INPUT_BUNDLE"),
 		"descriptor binding the scenario's named, non-secret inputs to verified files")
+	cmd.Flags().Bool("live-browser", os.Getenv("TESTEASE_LIVE_BROWSER") == "1",
+		"drive steps save what their Playwright page shows about once a second, for the desktop app to show live; the frames are never kept (env TESTEASE_LIVE_BROWSER=1)")
 	cmd.Flags().String("progress", "auto", "live progress on stderr: auto, plain, json or off")
 	cmd.Flags().StringP("output", "o", "text", "text or json")
 	return cmd
@@ -188,6 +190,7 @@ func doRun(cmd *cobra.Command, args []string) error {
 	log = log.With("run", runID)
 
 	keep, _ := cmd.Flags().GetBool("keep")
+	liveBrowser, _ := cmd.Flags().GetBool("live-browser")
 	releaseFailedTargets, _ := cmd.Flags().GetBool("release-failed-targets")
 	if keep && releaseFailedTargets {
 		return &runner.PreconditionError{Message: "--keep and --release-failed-targets ask for opposite target lifecycles"}
@@ -278,6 +281,7 @@ func doRun(cmd *cobra.Command, args []string) error {
 		Providers:            configuredProviders,
 		Driver:               dockerDriver{client: client},
 		DriveSecrets:         secrets,
+		LiveBrowser:          liveBrowser,
 		Observe:              progress.Observe,
 		Log:                  log,
 	})
@@ -661,6 +665,12 @@ func measurementConditions(cmd *cobra.Command, selection *targetcatalog.Selectio
 		"win.memory":            flagString(cmd, "win-memory"),
 		"aws.region":            flagString(cmd, "aws-region"),
 		"target.failure_policy": failurePolicy,
+	}
+	// Watching takes a screenshot a second inside the suite's own browser,
+	// which a run without it did not do. Said on the record, so a comparison
+	// can tell.
+	if live, _ := cmd.Flags().GetBool("live-browser"); live {
+		conditions["drive.live_browser"] = "on"
 	}
 	for key, value := range targetConditions(selection) {
 		conditions[key] = value
